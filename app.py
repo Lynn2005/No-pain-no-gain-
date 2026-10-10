@@ -1,7 +1,6 @@
 import os
 import re
 import json
-import hmac
 import uuid
 import time
 import shutil
@@ -25,21 +24,6 @@ for p in (BASE, UPLOADS, PROJECTS):
 DB = BASE / "recap.db"
 
 st.set_page_config(page_title=APP_NAME, page_icon="🎬", layout="wide", initial_sidebar_state="expanded")
-ACCESS_PASSWORD = os.getenv("APP_ACCESS_PASSWORD", "").strip()
-if not ACCESS_PASSWORD:
-    st.error("App access is not configured. Set APP_ACCESS_PASSWORD in the hosting environment before using this app.")
-    st.stop()
-if not st.session_state.get("access_granted", False):
-    st.markdown("### 🔒 Private workspace")
-    candidate=st.text_input("App password",type="password")
-    if st.button("Unlock app",type="primary",use_container_width=True):
-        if hmac.compare_digest(candidate,ACCESS_PASSWORD):
-            st.session_state["access_granted"]=True
-            st.rerun()
-        else:
-            st.error("Password မမှန်ပါ။ ထပ်စစ်ပါ။")
-    st.stop()
-
 st.markdown("""
 <style>
 :root { color-scheme: dark; }
