@@ -4,10 +4,8 @@ services:
     runtime: docker
     plan: free
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /_stcore/health
+    healthCheckPath: /
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.9
       - key: APP_DATA_DIR
         value: /tmp/recap-data
       - key: GROQ_API_KEY
