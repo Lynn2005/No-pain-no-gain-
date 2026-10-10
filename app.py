@@ -3,7 +3,10 @@ from pathlib import Path
 import streamlit as st
 from groq import Groq
 from google import genai
-from streamlit_local_storage import LocalStorage
+try:
+    from streamlit_local_storage import LocalStorage
+except ImportError:
+    LocalStorage = None
 
 st.set_page_config(page_title="One-Click Movie Recap", page_icon="🎬", layout="wide")
 st.markdown("""
@@ -40,13 +43,14 @@ def get_key(name, secret_name):
 
 # API keys can be saved in this browser's local storage (not on the server).
 try:
-    local_storage = LocalStorage()
-    saved_groq = local_storage.getItem("no_pain_groq_api_key", key="load_no_pain_groq_key") or st.session_state.get("load_no_pain_groq_key")
-    saved_gemini = local_storage.getItem("no_pain_gemini_api_key", key="load_no_pain_gemini_key") or st.session_state.get("load_no_pain_gemini_key")
-    if saved_groq and "groq_api_input" not in st.session_state:
-        st.session_state["groq_api_input"] = saved_groq
-    if saved_gemini and "gemini_api_input" not in st.session_state:
-        st.session_state["gemini_api_input"] = saved_gemini
+    local_storage = LocalStorage() if LocalStorage is not None else None
+    if local_storage is not None:
+        saved_groq = local_storage.getItem("no_pain_groq_api_key", key="load_no_pain_groq_key") or st.session_state.get("load_no_pain_groq_key")
+        saved_gemini = local_storage.getItem("no_pain_gemini_api_key", key="load_no_pain_gemini_key") or st.session_state.get("load_no_pain_gemini_key")
+        if saved_groq and "groq_api_input" not in st.session_state:
+            st.session_state["groq_api_input"] = saved_groq
+        if saved_gemini and "gemini_api_input" not in st.session_state:
+            st.session_state["gemini_api_input"] = saved_gemini
 except Exception:
     local_storage = None
 
