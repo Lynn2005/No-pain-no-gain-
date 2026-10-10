@@ -1,6 +1,6 @@
 # ONE CLICK — ONE MOVIE RECAP
 
-A Streamlit-based Burmese movie recap workflow using FFmpeg, Groq Whisper, Google Gemini, and Edge TTS.
+A Flask-based Burmese movie recap web app (not Streamlit) using FFmpeg, Groq Whisper, Google Gemini, and Edge TTS.
 
 ## Features
 - Video metadata inspection and FFmpeg audio extraction
@@ -19,7 +19,7 @@ A Streamlit-based Burmese movie recap workflow using FFmpeg, Groq Whisper, Googl
 4. Copy `.env.example` to `.env` and set keys in your shell (the app does not automatically load `.env`).
 5. `streamlit run app.py`
 
-After entering the app password, open Settings and enter Groq and Gemini keys. For durable encrypted key storage, set `APP_ENCRYPTION_KEY` in the host environment using a fresh Fernet key generated with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Keep this key private and stable: changing it prevents previously encrypted keys from being decrypted. You can alternatively set `GROQ_API_KEY` and `GEMINI_API_KEY` as server environment variables. Without `APP_ENCRYPTION_KEY`, the Settings form only holds keys for the active session.
+Set `GROQ_API_KEY` and `GEMINI_API_KEY` in Render Environment Variables, or enter them in the create form for that request only. For durable encrypted key storage, set `APP_ENCRYPTION_KEY` in the host environment using a fresh Fernet key generated with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Keep this key private and stable: changing it prevents previously encrypted keys from being decrypted. You can alternatively set `GROQ_API_KEY` and `GEMINI_API_KEY` as server environment variables. Without `APP_ENCRYPTION_KEY`, the Settings form only holds keys for the active session.
 
 ## Render
 Create a new Web Service from this repository and use Docker. Configure `APP_ACCESS_PASSWORD` (required to unlock the app), `APP_ENCRYPTION_KEY` (for encrypted saved API keys), `GROQ_API_KEY`, `GEMINI_API_KEY`, and optionally `GEMINI_MODEL`. The included `render.yaml` uses a Starter web service plus a persistent disk, which is a paid configuration and can incur charges. Do not deploy it without checking current Render pricing. A free service without persistent disk would lose local project assets across restarts/redeploys. Large full-length movies may exceed processing time, memory, or CPU limits; start with a short test clip.
@@ -36,7 +36,7 @@ Create Recap → upload movie → ONE CLICK RECAP → edit SRT / script → Voic
 
 ## Direct video URL input
 
-The Create Recap page supports both local uploads and **direct downloadable video-file URLs**. Supported extensions: MP4, MOV, MKV, WEBM, AVI, and M4V. Remote downloads are capped at 200 MB and use HTTP(S) only. Streaming pages such as YouTube/Netflix, playlists, private-network URLs, and non-video webpages are not supported. Use only videos you own or have permission to process.
+The home page supports both local uploads and **direct downloadable video-file URLs**. Supported extensions: MP4, MOV, MKV, WEBM, AVI, and M4V. Remote downloads are capped at 200 MB and use HTTP(S) only. Streaming pages such as YouTube/Netflix, playlists, private-network URLs, and non-video webpages are not supported. Use only videos you own or have permission to process.
 
 ## Free Render deployment notes
 
@@ -47,4 +47,4 @@ Required Render environment variables:
 - `APP_ENCRYPTION_KEY`: optional but recommended for encrypted saved provider keys; generate a Fernet key and keep it private.
 - `GEMINI_MODEL`: optional preferred Gemini model.
 
-After a push to the connected GitHub branch, wait for Render's deploy to finish, then open the service URL and test with a short, authorized direct MP4 URL. If Render is not linked to this repository/branch, use the Render Dashboard to trigger a deploy manually.
+After a push to the connected GitHub branch, wait for Render's deploy to finish, then open the service URL and test with a short direct MP4 URL. If Render is not linked to this repository/branch, use the Render Dashboard to trigger a deploy manually.
