@@ -12,7 +12,6 @@ from urllib.parse import urlsplit, urljoin
 from pathlib import Path
 from datetime import datetime
 import requests
-import os
 from flask import Flask, request, redirect, url_for, render_template_string, send_file
 
 APP_NAME = "ONE CLICK — ONE MOVIE RECAP"
@@ -526,7 +525,7 @@ def create():
 def project_view(pid):
     try:
         row,data,assets,root=project_assets(pid)
-        return page(PROJECT,title=row["title"],pid=pid,row=row,data=data,assets=assets,
+        return page(PROJECT,title=row["title"],msg=request.args.get("msg",""),pid=pid,row=row,data=data,assets=assets,
                     exists=lambda p: bool(p and Path(p).is_file()),
                     read_text=lambda p: Path(p).read_text(encoding="utf-8") if p and Path(p).is_file() else "")
     except (ValueError,LookupError) as exc:
