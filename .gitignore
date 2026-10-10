@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.env
+.venv/
+data/
+*.mp4
+*.mp3
+*.wav
+*.srt
+.streamlit/secrets.toml
