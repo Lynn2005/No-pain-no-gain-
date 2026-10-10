@@ -257,7 +257,7 @@ def render_video(video,voice,output,subtitle=None,settings=None,preview=False):
     label_index=1
     if settings.get("blur_enabled"):
         vw=max(2,int(meta.get("width") or 1280)); vh=max(2,int(meta.get("height") or 720))
-        x=max(0,min(vw-2,int(settings.get("blur_x",20)))); y=max(0,min(vh-2,int(settings.get("blur_y",20)))
+        x=max(0,min(vw-2,int(settings.get("blur_x",20)))); y=max(0,min(vh-2,int(settings.get("blur_y",20))))
         w=max(2,min(vw-x,int(settings.get("blur_w",200)))); h=max(2,min(vh-y,int(settings.get("blur_h",80))))
         strength=max(1,min(30,int(settings.get("blur_strength",8))))
         graph.append(f"[0:v]split=2[blurbase][blursrc];[blursrc]crop={w}:{h}:{x}:{y},boxblur={strength}:2[blurpatch];[blurbase][blurpatch]overlay={x}:{y}[v1]")
