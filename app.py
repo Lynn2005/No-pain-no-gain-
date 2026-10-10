@@ -229,7 +229,7 @@ def esc_filter(path):
 
 def render_video(video,voice,output,subtitle=None,settings=None):
     settings=settings or {}
-    probe_video(video)
+    meta=probe_video(video)
     cmd=["ffmpeg","-y","-i",str(video),"-i",str(voice)]
     logo_path=settings.get("logo_path") if settings.get("logo_enabled") else None
     has_logo=bool(logo_path and Path(logo_path).exists())
@@ -265,10 +265,18 @@ def render_video(video,voice,output,subtitle=None,settings=None):
         graph.append(f"[2:v]scale=iw*{size/100:.3f}:-1,format=rgba,colorchannelmixer=aa={opacity:.2f}{logo_label}")
         graph.append(f"{current}{logo_label}overlay={x}:{y}:format=auto{out}")
         current=out
-    if graph:
-        cmd += ["-filter_complex",";".join(graph),"-map",current,"-map","1:a:0"]
+    audio_mode=settings.get("audio_mode","Narration only")
+    if audio_mode=="Mix narration + original" and meta.get("has_audio"):
+        graph.append("[0:a:0]volume=0.25[orig];[1:a:0]volume=1.0[narr];[orig][narr]amix=inputs=2:duration=shortest:dropout_transition=2[aout]")
+        audio_map="[aout]"
+    elif audio_mode=="Original audio only" and meta.get("has_audio"):
+        audio_map="0:a:0"
     else:
-        cmd += ["-map","0:v:0","-map","1:a:0"]
+        audio_map="1:a:0"
+    if graph:
+        cmd += ["-filter_complex",";".join(graph),"-map",current,"-map",audio_map]
+    else:
+        cmd += ["-map","0:v:0","-map",audio_map]
     cmd += ["-c:v","libx264","-preset","veryfast","-crf",str(settings.get("crf",23)),
             "-c:a","aac","-b:a","192k","-shortest","-movflags","+faststart",str(output)]
     run_cmd(cmd,timeout=7200)
@@ -492,6 +500,7 @@ elif page in ("Subtitle Studio","Voice Studio","Video Editor","Export History"):
                     st.caption(f"{meta.get('width','?')}×{meta.get('height','?')} · {meta.get('duration',0):.1f}s · {video.stat().st_size/1024/1024:.1f} MB")
                 settings=data.setdefault("settings",{})
                 settings.setdefault("subtitles_enabled",True); settings.setdefault("text_enabled",False); settings.setdefault("blur_enabled",False); settings.setdefault("logo_enabled",False)
+                settings["audio_mode"]=st.selectbox("Audio output",["Narration only","Mix narration + original","Original audio only"],index=["Narration only","Mix narration + original","Original audio only"].index(settings.get("audio_mode","Narration only")))
                 tool=st.radio("Adjust tool",["Subtitle","Text","Blur","Logo"],horizontal=True)
                 if tool=="Subtitle":
                     settings["subtitles_enabled"]=st.checkbox("Enable subtitles",value=settings["subtitles_enabled"])
