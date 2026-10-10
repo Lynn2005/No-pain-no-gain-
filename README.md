@@ -19,10 +19,10 @@ A Streamlit-based Burmese movie recap workflow using FFmpeg, Groq Whisper, Googl
 4. Copy `.env.example` to `.env` and set keys in your shell (the app does not automatically load `.env`).
 5. `streamlit run app.py`
 
-In Settings, enter Groq and Gemini keys. For durable encrypted key storage, set `APP_ENCRYPTION_KEY` in the host environment using a fresh Fernet key generated with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Keep this key private and stable: changing it prevents previously encrypted keys from being decrypted. You can alternatively set `GROQ_API_KEY` and `GEMINI_API_KEY` as server environment variables. Without `APP_ENCRYPTION_KEY`, the Settings form only holds keys for the active session.
+After entering the app password, open Settings and enter Groq and Gemini keys. For durable encrypted key storage, set `APP_ENCRYPTION_KEY` in the host environment using a fresh Fernet key generated with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Keep this key private and stable: changing it prevents previously encrypted keys from being decrypted. You can alternatively set `GROQ_API_KEY` and `GEMINI_API_KEY` as server environment variables. Without `APP_ENCRYPTION_KEY`, the Settings form only holds keys for the active session.
 
 ## Render
-Create a new Web Service from this repository and use Docker. Configure `GROQ_API_KEY`, `GEMINI_API_KEY`, and optionally `GEMINI_MODEL`. A persistent disk is required if project assets must survive redeploys. Free-tier availability, disk support, processing time, memory and CPU depend on the current Render plan; large full-length movies may exceed limits. Start with a short test clip.
+Create a new Web Service from this repository and use Docker. Configure `APP_ACCESS_PASSWORD` (required to unlock the app), `APP_ENCRYPTION_KEY` (for encrypted saved API keys), `GROQ_API_KEY`, `GEMINI_API_KEY`, and optionally `GEMINI_MODEL`. A persistent disk is required if project assets must survive redeploys. Free-tier availability, disk support, processing time, memory and CPU depend on the current Render plan; large full-length movies may exceed limits. Start with a short test clip.
 
 ## Workflow
 Create Recap → upload movie → ONE CLICK RECAP → edit SRT / script → Voice Studio → Video Editor → DONE — CONFIRM EDITS → RENDER FINAL MP4.
