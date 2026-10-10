@@ -41,14 +41,12 @@ def get_key(name, secret_name):
 # API keys can be saved in this browser's local storage (not on the server).
 try:
     local_storage = LocalStorage()
-    if "api_storage_loaded" not in st.session_state:
-        saved_groq = local_storage.getItem("no_pain_groq_api_key", key="load_no_pain_groq_key")
-        saved_gemini = local_storage.getItem("no_pain_gemini_api_key", key="load_no_pain_gemini_key")
-        if saved_groq and "groq_api_input" not in st.session_state:
-            st.session_state["groq_api_input"] = saved_groq
-        if saved_gemini and "gemini_api_input" not in st.session_state:
-            st.session_state["gemini_api_input"] = saved_gemini
-        st.session_state["api_storage_loaded"] = True
+    saved_groq = local_storage.getItem("no_pain_groq_api_key", key="load_no_pain_groq_key") or st.session_state.get("load_no_pain_groq_key")
+    saved_gemini = local_storage.getItem("no_pain_gemini_api_key", key="load_no_pain_gemini_key") or st.session_state.get("load_no_pain_gemini_key")
+    if saved_groq and "groq_api_input" not in st.session_state:
+        st.session_state["groq_api_input"] = saved_groq
+    if saved_gemini and "gemini_api_input" not in st.session_state:
+        st.session_state["gemini_api_input"] = saved_gemini
 except Exception:
     local_storage = None
 
@@ -58,8 +56,7 @@ with st.sidebar:
     st.text_input("Gemini API Key",key="gemini_api_input",value=st.session_state.get("gemini_api_input",get_key("GEMINI_API_KEY","gemini_api_key")),type="password")
     groq_key = st.session_state.get("groq_api_input","") or get_key("GROQ_API_KEY","groq_api_key")
     gemini_key = st.session_state.get("gemini_api_input","") or get_key("GEMINI_API_KEY","gemini_api_key")
-    save_col, clear_col = st.columns(2)
-    if save_col.button("💾 Save Keys",use_container_width=True):
+    if st.button("💾 Save Keys",use_container_width=True):
         if not groq_key and not gemini_key:
             st.warning("သိမ်းရန် API Key အနည်းဆုံးတစ်ခု ထည့်ပါ။")
         elif local_storage is None:
@@ -73,16 +70,6 @@ with st.sidebar:
                 st.success("API Keys ကို ဒီ browser ထဲမှာ သိမ်းပြီးပါပြီ။")
             except Exception as e:
                 st.error(f"Key သိမ်းမရပါ: {e}")
-    if clear_col.button("🗑️ Clear",use_container_width=True):
-        try:
-            if local_storage is not None:
-                local_storage.deleteItem("no_pain_groq_api_key")
-                local_storage.deleteItem("no_pain_gemini_api_key")
-            st.session_state["groq_api_input"] = ""
-            st.session_state["gemini_api_input"] = ""
-            st.success("သိမ်းထားတဲ့ keys ကို ဖျက်ပြီးပါပြီ။")
-        except Exception as e:
-            st.error(f"ဖျက်မရပါ: {e}")
     model=st.selectbox("Gemini model",["gemini-3.8-flash","gemini-3.7-flash","gemini-3.5-flash-lite"],index=0)
     st.caption("Keys များကို GitHub သို့မဟုတ် server ပေါ်မသိမ်းပါ။ Browser data ရှင်းလျှင် ပြန်ထည့်ရနိုင်သည်။")
 
