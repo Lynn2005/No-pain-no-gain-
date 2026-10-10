@@ -7,4 +7,4 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 COPY . .
 RUN mkdir -p /var/data
 EXPOSE 10000
-CMD ["sh","-c","streamlit run app.py --server.address=0.0.0.0 --server.port=${PORT:-10000} --server.headless=true"]
+CMD ["sh","-c","gunicorn --bind 0.0.0.0:${PORT:-10000} --workers 1 --timeout 900 app:app"]
