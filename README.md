@@ -1,6 +1,6 @@
 # ONE CLICK — ONE MOVIE RECAP
 
-A Flask-based Burmese movie recap web app (not Streamlit) using FFmpeg, Groq Whisper, Google Gemini, and Edge TTS.
+A Burmese movie recap web app built with Flask using FFmpeg, Groq Whisper, Google Gemini, and Edge TTS.
 
 ## Features
 - Video metadata inspection and FFmpeg audio extraction
@@ -17,12 +17,12 @@ A Flask-based Burmese movie recap web app (not Streamlit) using FFmpeg, Groq Whi
 2. `python -m venv .venv` and activate it.
 3. `pip install -r requirements.txt`
 4. Copy `.env.example` to `.env` and set keys in your shell (the app does not automatically load `.env`).
-5. `streamlit run app.py`
+5. `python app.py` or `gunicorn --bind 0.0.0.0:10000 app:app`
 
-Set `GROQ_API_KEY` and `GEMINI_API_KEY` in Render Environment Variables, or enter them in the create form for that request only. For durable encrypted key storage, set `APP_ENCRYPTION_KEY` in the host environment using a fresh Fernet key generated with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Keep this key private and stable: changing it prevents previously encrypted keys from being decrypted. You can alternatively set `GROQ_API_KEY` and `GEMINI_API_KEY` as server environment variables. Without `APP_ENCRYPTION_KEY`, the Settings form only holds keys for the active session.
+Set `GROQ_API_KEY` and `GEMINI_API_KEY` in Render Environment Variables, or enter them in the create form for that request only. Keys entered in the form are not stored in the database.
 
 ## Render
-Create a new Web Service from this repository and use Docker. Configure `APP_ACCESS_PASSWORD` (required to unlock the app), `APP_ENCRYPTION_KEY` (for encrypted saved API keys), `GROQ_API_KEY`, `GEMINI_API_KEY`, and optionally `GEMINI_MODEL`. The included `render.yaml` uses a Starter web service plus a persistent disk, which is a paid configuration and can incur charges. Do not deploy it without checking current Render pricing. A free service without persistent disk would lose local project assets across restarts/redeploys. Large full-length movies may exceed processing time, memory, or CPU limits; start with a short test clip.
+Create a Docker Web Service from this repository. Set `GROQ_API_KEY`, `GEMINI_API_KEY`, and optionally `GEMINI_MODEL` in Render Environment Variables. The included `render.yaml` uses the Free plan and temporary storage. Large full-length movies may exceed processing time, memory, or CPU limits; start with a short test clip.
 
 ## Workflow
 Create Recap → upload movie → ONE CLICK RECAP → edit SRT / script → Voice Studio → Video Editor → DONE — CONFIRM EDITS → RENDER FINAL MP4.
@@ -44,7 +44,6 @@ The included `render.yaml` targets the Render Free web service and stores app da
 
 Required Render environment variables:
 - `GROQ_API_KEY` and `GEMINI_API_KEY`: provider API keys.
-- `APP_ENCRYPTION_KEY`: optional but recommended for encrypted saved provider keys; generate a Fernet key and keep it private.
 - `GEMINI_MODEL`: optional preferred Gemini model.
 
 After a push to the connected GitHub branch, wait for Render's deploy to finish, then open the service URL and test with a short direct MP4 URL. If Render is not linked to this repository/branch, use the Render Dashboard to trigger a deploy manually.
