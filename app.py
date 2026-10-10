@@ -388,10 +388,23 @@ elif page=="Create Recap":
                     srtpath=root/"burmese_recap.srt"
                     srtpath.write_text(make_srt(recap,meta["duration"]),encoding="utf-8")
                     data["assets"]["srt"]=str(srtpath)
+                    status.write("6/6 · Burmese narration generation")
+                    try:
+                        voicepath=root/"narration.mp3"
+                        create_voice(recap,voicepath,"my-MM-NilarNeural",0)
+                        data["assets"]["voice"]=str(voicepath)
+                        data["voice_provider"]="edge-tts my-MM-NilarNeural"
+                    except Exception as tts_error:
+                        data["tts_error"]=str(tts_error)[:500]
                     data["status"]="draft"
                     save_project(pid,uploaded.name,"draft",data)
-                    status.update(label="Recap draft ready",state="complete")
-                st.success("Transcript, Burmese recap နဲ့ SRT draft ရပါပြီ။ Voice generation ကို Voice Studio မှာ ဆက်လုပ်ပါ။")
+                    status.update(label="Recap assets prepared",state="complete")
+                st.success("Transcript, Burmese recap နဲ့ SRT draft ရပါပြီ။")
+                if data.get("assets",{}).get("voice"):
+                    st.success("AI narration ကိုလည်း အလိုအလျောက် ထုတ်ပြီးပါပြီ။ Video Editor မှာ preview / render ဆက်လုပ်နိုင်ပါတယ်။")
+                else:
+                    st.warning("Recap ကိုသိမ်းထားပါတယ်၊ ဒါပေမဲ့ AI voice မထွက်ပါ။ Voice Studio မှာ ပြန်စမ်းပါ သို့မဟုတ် audio upload လုပ်ပါ။")
+                    if data.get("tts_error"): st.caption(data["tts_error"])
                 st.rerun()
             except Exception as e:
                 save_project(pid,uploaded.name,"failed",data,str(e))
