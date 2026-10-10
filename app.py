@@ -41,7 +41,7 @@ with st.sidebar:
     st.header("🔑 API Settings")
     groq_key=st.text_input("Groq API Key",value=get_key("GROQ_API_KEY","groq_api_key"),type="password",help="Session only. Use Render Environment for persistent server settings.")
     gemini_key=st.text_input("Gemini API Key",value=get_key("GEMINI_API_KEY","gemini_api_key"),type="password")
-    model=st.selectbox("Gemini model",["gemini-2.5-flash","gemini-2.0-flash"],index=0)
+    model=st.selectbox("Gemini model",["gemini-3.8-flash","gemini-3.7-flash","gemini-3.5-flash-lite"],index=0)
     st.caption("Keys entered here are not saved to GitHub or permanently stored.")
 
 st.markdown("### 1. Upload your movie")
@@ -66,7 +66,7 @@ if video:
                         with audio.open("rb") as f:
                             tr=g.audio.transcriptions.create(file=(audio.name,f.read()),model="whisper-large-v3-turbo",response_format="text")
                         transcript=str(tr)
-                        st.write("Gemini ဖြင့် မြန်မာ recap ရေးနေသည်…")
+                        st.write(f"Gemini {model} ဖြင့် မြန်မာ recap ရေးနေသည်…")
                         client=genai.Client(api_key=gemini_key)
                         prompt=("သင်သည် မြန်မာ Movie Recap ဇာတ်ညွှန်းရေးသူဖြစ်သည်။ အောက်ပါ transcript ကို အခြေခံပြီး "
                                 "ဇာတ်လမ်းအစဉ်လိုက်၊ သဘာဝကျသော မြန်မာစကားပြောဟန်ဖြင့် recap ရေးပါ။ မရှိသောအချက်အလက် မတီထွင်ပါနှင့်။ "
@@ -108,7 +108,6 @@ if "last_recap" in st.session_state:
                 out=root/"final.mp4"
                 cmd=["ffmpeg","-y","-i",str(vp),"-i",str(ap)]
                 if use_subs:
-                    # Escape path for FFmpeg filter syntax on Linux hosts.
                     subpath=str(sp).replace("\\","/").replace(":","\\:")
                     cmd += ["-vf",f"subtitles='{subpath}'"]
                 cmd += ["-map","0:v:0","-map","1:a:0","-c:v","libx264","-preset","veryfast","-crf","23","-c:a","aac","-shortest","-movflags","+faststart",str(out)]
