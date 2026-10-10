@@ -1,6 +1,7 @@
-streamlit>=1.40,<2
 groq>=0.11,<1
 google-genai>=1.0,<2
 edge-tts>=6.1,<8
 cryptography>=42,<47
 requests>=2.31,<3
+Flask>=3.0,<4
+gunicorn>=22,<24
