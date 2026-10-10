@@ -17,11 +17,11 @@ def test_app_parses():
 
 def test_srt_draft_is_valid_and_has_newlines():
     helpers = load_helpers()
-    content = helpers["make_srt"]("မင်္ဂလာပါ။\\nဒီမှာ ဇာတ်လမ်းပါ။", 20)
-    assert "\\n" in content
+    content = helpers["make_srt"]("မင်္ဂလာပါ။\nဒီမှာ ဇာတ်လမ်းပါ။", 20)
+    assert "\n" in content
     assert "-->" in content
     validated = helpers["validate_srt"](content)
-    assert validated.startswith("1\\n")
+    assert validated.startswith("1\n")
 
 def test_rejects_invalid_srt():
     helpers = load_helpers()
