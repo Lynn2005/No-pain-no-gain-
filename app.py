@@ -30,7 +30,6 @@ def db():
     con.execute("""CREATE TABLE IF NOT EXISTS projects(
         id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at TEXT NOT NULL,
         status TEXT NOT NULL, data TEXT NOT NULL, error TEXT DEFAULT '')""")
-    con.execute("CREATE TABLE IF NOT EXISTS app_settings (name TEXT PRIMARY KEY, value BLOB NOT NULL)")
     con.commit()
     return con
 
@@ -39,38 +38,6 @@ def save_project(pid, title, status, data, error=""):
         con.execute("INSERT INTO projects(id,title,created_at,status,data,error) VALUES(?,?,?,?,?,?) "
                     "ON CONFLICT(id) DO UPDATE SET title=excluded.title,status=excluded.status,data=excluded.data,error=excluded.error",
                     (pid,title,datetime.utcnow().isoformat(timespec="seconds")+"Z",status,json.dumps(data,ensure_ascii=False),error))
-        con.commit()
-
-def encryption_box():
-    key=os.getenv("APP_ENCRYPTION_KEY","").strip()
-    if not key: return None
-    try: return Fernet(key.encode("utf-8"))
-    except Exception: return None
-
-def load_saved_keys():
-    box=encryption_box()
-    if box is None: return {}
-    values={}
-    try:
-        with db() as con:
-            rows=con.execute("SELECT name,value FROM app_settings WHERE name IN ('groq_key','gemini_key')").fetchall()
-        for row in rows:
-            try: values[row["name"]]=box.decrypt(bytes(row["value"])).decode("utf-8")
-            except (InvalidToken,ValueError): pass
-    except Exception: pass
-    return values
-
-def save_encrypted_keys(groq_key,gemini_key):
-    box=encryption_box()
-    if box is None:
-        raise RuntimeError("Persistent encrypted key saving requires a valid APP_ENCRYPTION_KEY environment variable.")
-    with db() as con:
-        for name,value in (("groq_key",groq_key),("gemini_key",gemini_key)):
-            if value:
-                con.execute("INSERT INTO app_settings(name,value) VALUES(?,?) ON CONFLICT(name) DO UPDATE SET value=excluded.value",
-                            (name,box.encrypt(value.encode("utf-8"))))
-            else:
-                con.execute("DELETE FROM app_settings WHERE name=?",(name,))
         con.commit()
 
 def load_projects():
@@ -431,7 +398,7 @@ PAGE = r"""<!doctype html>
 :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top right,#20203a 0,#101117 45%,#0b0c10 100%);color:#f3f3fa;font:16px/1.55 system-ui,-apple-system,sans-serif}
 main{max-width:1000px;margin:auto;padding:24px 16px 60px}.hero,.panel{border:1px solid #353548;border-radius:18px;background:#171821;padding:22px;margin:0 0 18px}.hero{background:linear-gradient(120deg,#191927,#27213e 65%,#172438)}h1{font-size:clamp(1.5rem,5vw,2.4rem);margin:0}h2{margin-top:0;font-size:1.25rem}p{color:#c9c9d9}.muted{color:#a7a8ba;font-size:.9rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}.field{margin:12px 0}label{display:block;font-weight:650;margin-bottom:6px}input,select,textarea{width:100%;padding:12px;border-radius:10px;border:1px solid #44465a;background:#0e1018;color:#fff;font:inherit}textarea{min-height:210px;resize:vertical}button,.btn{display:inline-block;border:0;border-radius:10px;padding:12px 16px;background:#8b78ff;color:white;font-weight:750;font-size:1rem;text-decoration:none;cursor:pointer}button:hover,.btn:hover{filter:brightness(1.1)}.secondary{background:#303143}.error{border:1px solid #8e3e4b;background:#351c24;padding:12px;border-radius:10px;color:#ffc5cc}.ok{border:1px solid #286b57;background:#142b25;padding:12px;border-radius:10px}.card{padding:14px;border:1px solid #353548;border-radius:12px;margin:10px 0}.actions{display:flex;gap:10px;flex-wrap:wrap}.pill{font-size:.8rem;background:#2a2b3a;border-radius:99px;padding:4px 9px;color:#d9d8f4}a{color:#c8beff}small{color:#b4b5c7}hr{border:0;border-top:1px solid #353548;margin:20px 0}
 </style></head><body><main>
-<header class="hero"><h1>🎬 ONE CLICK — ONE MOVIE RECAP</h1><p>Upload a video or direct video URL · Generate Burmese recap, subtitles and narration.</p><span class="pill">Render Web App · No Streamlit</span></header>
+<header class="hero"><h1>🎬 ONE CLICK — ONE MOVIE RECAP</h1><p>Upload a video or direct video URL · Generate Burmese recap, subtitles and narration.</p><span class="pill">Render Web App</span></header>
 {% if msg %}<div class="ok">{{ msg }}</div>{% endif %}
 {% if error %}<div class="error">{{ error }}</div>{% endif %}
 {{ body|safe }}
