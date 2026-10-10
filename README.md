@@ -3,14 +3,14 @@
 A Burmese movie recap web app built with Flask using FFmpeg, Groq Whisper, Google Gemini, and Edge TTS.
 
 ## Features
-- Video metadata inspection and FFmpeg audio extraction
-- Groq Whisper transcription
-- Gemini model discovery and Burmese recap generation in transcript chunks
-- Editable recap script and SRT draft
-- Myanmar Edge TTS voice generation or uploaded narration
-- Video preview, subtitle/text/blur/logo settings, confirmation before rendering
+- Video upload or direct video-file URL input
+- FFmpeg audio extraction and Groq Whisper transcription
+- Gemini Burmese recap generation, with Groq fallback
+- Editable recap script and regenerated SRT draft
+- Myanmar Edge TTS narration generation
+- Final MP4 rendering with narration/original audio selection and subtitles
 - SQLite project metadata and project assets on the configured data directory
-- Render Docker deployment with FFmpeg and Noto fonts
+- Mobile-friendly Flask interface and Render Docker deployment
 
 ## Local setup
 1. Install Python 3.11 and FFmpeg/FFprobe.
@@ -25,14 +25,14 @@ Set `GROQ_API_KEY` and `GEMINI_API_KEY` in Render Environment Variables, or ente
 Create a Docker Web Service from this repository. Set `GROQ_API_KEY`, `GEMINI_API_KEY`, and optionally `GEMINI_MODEL` in Render Environment Variables. The included `render.yaml` uses the Free plan and temporary storage. Large full-length movies may exceed processing time, memory, or CPU limits; start with a short test clip.
 
 ## Workflow
-Create Recap → upload movie → ONE CLICK RECAP → edit SRT / script → Voice Studio → Video Editor → DONE — CONFIRM EDITS → RENDER FINAL MP4.
+Open the home page → upload a video or enter a direct video URL → generate recap → edit the Burmese script → generate narration → render and download the final MP4.
 
 ## Important limitations
 - Gemini model selection checks the model list accessible to the configured API key; if the requested model is unavailable, the app selects a listed non-preview Flash model. Availability and quotas depend on Google account access.
 - Subtitle timing generated from the recap is a draft estimate, not forced alignment. Review before export.
 - Edge TTS voice availability can change. If Myanmar voices are unavailable, upload a narration file instead.
-- The current build does not include login/multi-user isolation. Encrypted saved API keys are app-wide for this single-user/private deployment, not separate per user. Do not expose a shared public instance with private credentials.
-- Video editor preview currently previews the source video; overlay and render settings are applied by FFmpeg at export. Validate a short test clip first.
+- The current build does not include login/multi-user isolation. Anyone who can access the public URL can submit jobs and consume server resources. Do not use a shared public instance for private data.
+- The editor currently provides basic audio selection and subtitle controls; text/logo/blur visual editing from the former interface is not included in this initial Flask version. Validate a short test clip first.
 
 ## Direct video URL input
 
