@@ -195,29 +195,43 @@ def esc_filter(path):
 
 def render_video(video,voice,output,subtitle=None,settings=None):
     settings=settings or {}
-    meta=probe_video(video)
+    probe_video(video)
     cmd=["ffmpeg","-y","-i",str(video),"-i",str(voice)]
-    filters=[]
+    logo_path=settings.get("logo_path") if settings.get("logo_enabled") else None
+    has_logo=bool(logo_path and Path(logo_path).exists())
+    if has_logo: cmd += ["-i",str(logo_path)]
+    graph=[]
+    current="[0:v]"
+    label_index=1
     if settings.get("blur_enabled"):
-        x=int(settings.get("blur_x",20)); y=int(settings.get("blur_y",20))
+        x=max(0,int(settings.get("blur_x",20))); y=max(0,int(settings.get("blur_y",20)))
         w=max(2,int(settings.get("blur_w",200))); h=max(2,int(settings.get("blur_h",80)))
         strength=max(1,min(30,int(settings.get("blur_strength",8))))
-        filters.append(f"split[base][blurin];[blurin]crop={w}:{h}:{x}:{y},boxblur={strength}:2[blurred];[base][blurred]overlay={x}:{y}")
+        graph.append(f"[0:v]split=2[blurbase][blursrc];[blursrc]crop={w}:{h}:{x}:{y},boxblur={strength}:2[blurpatch];[blurbase][blurpatch]overlay={x}:{y}[v1]")
+        current="[v1]"; label_index=2
     if settings.get("text_enabled") and settings.get("overlay_text","").strip():
         txt=esc_filter(settings["overlay_text"])
         fs=max(8,min(120,int(settings.get("text_size",32))))
-        x=int(settings.get("text_x",20)); y=int(settings.get("text_y",20))
+        x=max(0,int(settings.get("text_x",20))); y=max(0,int(settings.get("text_y",20)))
         color=settings.get("text_color","#FFFFFF").replace("#","0x")
-        filters.append(f"drawtext=text='{txt}':fontsize={fs}:fontcolor={color}:borderw=2:bordercolor=black:x={x}:y={y}")
-    if settings.get("logo_enabled") and settings.get("logo_path") and Path(settings["logo_path"]).exists():
-        cmd += ["-i",settings["logo_path"]]
-        filters.append("movie="+esc_filter(settings["logo_path"])+"[logo];[in][logo]overlay=20:20[out]")
-    if subtitle and settings.get("subtitles_enabled",True):
+        out=f"[v{label_index}]"
+        graph.append(f"{current}drawtext=text='{txt}':fontsize={fs}:fontcolor={color}:borderw=2:bordercolor=black:x={x}:y={y}{out}")
+        current=out; label_index+=1
+    if subtitle and settings.get("subtitles_enabled",True) and Path(subtitle).exists():
         style=f"FontSize={int(settings.get('subtitle_size',22))},Outline=2,Shadow=0,Alignment=2,MarginV=30"
-        filters.append(f"subtitles='{esc_filter(subtitle)}':force_style='{style}'")
-    if filters:
-        cmd += ["-vf",",".join(filters)]
-    cmd += ["-map","0:v:0","-map","1:a:0","-c:v","libx264","-preset","veryfast","-crf",str(settings.get("crf",23)),
+        out=f"[v{label_index}]"
+        graph.append(f"{current}subtitles='{esc_filter(subtitle)}':force_style='{style}'{out}")
+        current=out; label_index+=1
+    if has_logo:
+        x=max(0,int(settings.get("logo_x",20))); y=max(0,int(settings.get("logo_y",20)))
+        out=f"[v{label_index}]"
+        graph.append(f"{current}[2:v]overlay={x}:{y}:format=auto{out}")
+        current=out
+    if graph:
+        cmd += ["-filter_complex",";".join(graph),"-map",current,"-map","1:a:0"]
+    else:
+        cmd += ["-map","0:v:0","-map","1:a:0"]
+    cmd += ["-c:v","libx264","-preset","veryfast","-crf",str(settings.get("crf",23)),
             "-c:a","aac","-b:a","192k","-shortest","-movflags","+faststart",str(output)]
     run_cmd(cmd,timeout=7200)
     if not output.exists() or output.stat().st_size<10000: raise RuntimeError("FFmpeg output validation failed.")
