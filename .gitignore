@@ -7,4 +7,3 @@ data/
 *.mp3
 *.wav
 *.srt
-.streamlit/secrets.toml
