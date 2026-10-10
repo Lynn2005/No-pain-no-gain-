@@ -2,7 +2,7 @@ services:
   - type: web
     name: no-pain-no-gain
     runtime: docker
-    plan: free
+    plan: starter
     dockerfilePath: ./Dockerfile
     healthCheckPath: /_stcore/health
     envVars:
