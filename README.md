@@ -43,7 +43,6 @@ The Create Recap page supports both local uploads and **direct downloadable vide
 The included `render.yaml` targets the Render Free web service and stores app data under `/tmp/recap-data`. Free Render services have an ephemeral filesystem: uploaded movies, recap projects, SQLite records, and saved settings may disappear after restarts, spin-downs, or redeploys. Free instances also have limited CPU/RAM and may not finish long-video processing. Use short clips for testing, and keep copies of any generated files you need. Persistent project storage requires a paid persistent disk or a separate storage/database design.
 
 Required Render environment variables:
-- `APP_ACCESS_PASSWORD`: a strong private password to unlock the app.
 - `GROQ_API_KEY` and `GEMINI_API_KEY`: provider API keys.
 - `APP_ENCRYPTION_KEY`: optional but recommended for encrypted saved provider keys; generate a Fernet key and keep it private.
 - `GEMINI_MODEL`: optional preferred Gemini model.
