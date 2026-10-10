@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 import streamlit as st
+from cryptography.fernet import Fernet, InvalidToken
 
 APP_NAME = "ONE CLICK — ONE MOVIE RECAP"
 BASE = Path(os.getenv("APP_DATA_DIR", "data")).resolve()
@@ -41,6 +42,7 @@ def db():
     con.execute("""CREATE TABLE IF NOT EXISTS projects(
         id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at TEXT NOT NULL,
         status TEXT NOT NULL, data TEXT NOT NULL, error TEXT DEFAULT '')""")
+    con.execute("CREATE TABLE IF NOT EXISTS app_settings (name TEXT PRIMARY KEY, value BLOB NOT NULL)")
     con.commit()
     return con
 
@@ -49,6 +51,38 @@ def save_project(pid, title, status, data, error=""):
         con.execute("INSERT INTO projects(id,title,created_at,status,data,error) VALUES(?,?,?,?,?,?) "
                     "ON CONFLICT(id) DO UPDATE SET title=excluded.title,status=excluded.status,data=excluded.data,error=excluded.error",
                     (pid,title,datetime.utcnow().isoformat(timespec="seconds")+"Z",status,json.dumps(data,ensure_ascii=False),error))
+        con.commit()
+
+def encryption_box():
+    key=os.getenv("APP_ENCRYPTION_KEY","").strip()
+    if not key: return None
+    try: return Fernet(key.encode("utf-8"))
+    except Exception: return None
+
+def load_saved_keys():
+    box=encryption_box()
+    if box is None: return {}
+    values={}
+    try:
+        with db() as con:
+            rows=con.execute("SELECT name,value FROM app_settings WHERE name IN ('groq_key','gemini_key')").fetchall()
+        for row in rows:
+            try: values[row["name"]]=box.decrypt(bytes(row["value"])).decode("utf-8")
+            except (InvalidToken,ValueError): pass
+    except Exception: pass
+    return values
+
+def save_encrypted_keys(groq_key,gemini_key):
+    box=encryption_box()
+    if box is None:
+        raise RuntimeError("Persistent encrypted key saving requires a valid APP_ENCRYPTION_KEY environment variable.")
+    with db() as con:
+        for name,value in (("groq_key",groq_key),("gemini_key",gemini_key)):
+            if value:
+                con.execute("INSERT INTO app_settings(name,value) VALUES(?,?) ON CONFLICT(name) DO UPDATE SET value=excluded.value",
+                            (name,box.encrypt(value.encode("utf-8"))))
+            else:
+                con.execute("DELETE FROM app_settings WHERE name=?",(name,))
         con.commit()
 
 def load_projects():
@@ -257,8 +291,9 @@ with st.sidebar:
     st.caption("Projects are stored on this server's data directory. Hosted disk persistence depends on deployment settings.")
 
 if "active_project" not in st.session_state: st.session_state.active_project=""
-if "api_groq" not in st.session_state: st.session_state.api_groq=os.getenv("GROQ_API_KEY","")
-if "api_gemini" not in st.session_state: st.session_state.api_gemini=os.getenv("GEMINI_API_KEY","")
+saved_keys=load_saved_keys()
+if "api_groq" not in st.session_state: st.session_state.api_groq=os.getenv("GROQ_API_KEY","") or saved_keys.get("groq_key","")
+if "api_gemini" not in st.session_state: st.session_state.api_gemini=os.getenv("GEMINI_API_KEY","") or saved_keys.get("gemini_key","")
 if "api_gemini_model" not in st.session_state: st.session_state.api_gemini_model=os.getenv("GEMINI_MODEL","gemini-3.8-flash")
 
 projects=load_projects()
@@ -335,7 +370,7 @@ elif page=="Create Recap":
 
 elif page=="Settings":
     st.markdown("### API & provider settings")
-    st.info("ဒီ build မှာ API key ကို app session ထဲတွင် ထည့်သုံးနိုင်ပါတယ်။ Permanent server-side secret storage အတွက် Render Environment Variables သုံးပါ။ Shared public app မှာ user-specific encrypted key vault မတပ်ထားသေးပါ။")
+    st.info("Persistent encrypted Save အတွက် hosting Environment Variables ထဲမှာ APP_ENCRYPTION_KEY သတ်မှတ်ပါ။ Key မသတ်မှတ်ထားလျှင် settings သည် session-only ဖြစ်ပြီး permanent success မပြပါ။ Public/shared app အတွက် authentication မပါသေးသောကြောင့် private deployment သာသုံးပါ။")
     with st.form("provider_settings"):
         groq=st.text_input("Groq API Key",value=st.session_state.api_groq,type="password")
         gemini=st.text_input("Gemini API Key",value=st.session_state.api_gemini,type="password")
@@ -343,7 +378,14 @@ elif page=="Settings":
         submitted=st.form_submit_button("Save settings",type="primary")
     if submitted:
         st.session_state.api_groq=groq.strip(); st.session_state.api_gemini=gemini.strip(); st.session_state.api_gemini_model=model.strip() or "gemini-3.8-flash"
-        st.success("Settings saved for this active session. For persistence after restart, set GROQ_API_KEY, GEMINI_API_KEY and GEMINI_MODEL in hosting Environment Variables.")
+        if encryption_box() is not None:
+            try:
+                save_encrypted_keys(st.session_state.api_groq,st.session_state.api_gemini)
+                st.success("API keys saved encrypted to persistent server storage.")
+            except Exception as e:
+                st.error("Encrypted save failed: "+str(e))
+        else:
+            st.warning("Keys are available for this session only. Set APP_ENCRYPTION_KEY in hosting Environment Variables for encrypted persistent saving.")
     c1,c2=st.columns(2)
     c1.markdown("[Get Groq API key](https://console.groq.com/keys)")
     c2.markdown("[Get Gemini API key](https://aistudio.google.com/apikey)")
