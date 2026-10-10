@@ -96,37 +96,37 @@ def split_subtitle_text(text, chars=25, max_lines=2):
     if current: lines.append(current)
     segments=[]
     for i in range(0,len(lines),max_lines):
-        segments.append("\\n".join(lines[i:i+max_lines]))
+        segments.append("\n".join(lines[i:i+max_lines]))
     return segments or [text.strip()]
 
 def make_srt(text,duration,chars=25,max_lines=2):
     parts=[]
     # Split by sentence first; split long sentences into subtitle-sized chunks.
-    sentences=[s.strip() for s in re.split(r"(?<=[။!?])\\s+|\\n+",text) if s.strip()]
+    sentences=[s.strip() for s in re.split(r"(?<=[။!?])\s+|\n+",text) if s.strip()]
     if not sentences and text.strip(): sentences=[text.strip()]
     chunks=[]
     for sentence in sentences:
         chunks.extend(split_subtitle_text(sentence,chars,max_lines))
     if not chunks: return ""
-    weights=[max(1,len(re.sub(r"\\s","",x))) for x in chunks]
+    weights=[max(1,len(re.sub(r"\s","",x))) for x in chunks]
     total=sum(weights); cursor=0.0
     for i,(line,w) in enumerate(zip(chunks,weights),1):
         start=cursor; cursor += max(.4,(duration*w/total) if duration else 2.5)
         end=cursor
         parts.extend([str(i),f"{srt_stamp(start)} --> {srt_stamp(end)}",line,""])
-    return "\\n".join(parts)
+    return "\n".join(parts)
 
 def validate_srt(content):
-    blocks=re.split(r"\\n\\s*\\n",content.strip())
+    blocks=re.split(r"\n\s*\n",content.strip())
     good=[]
-    pattern=re.compile(r"^(\\d{2}:\\d{2}:\\d{2}[,.]\\d{3})\\s+-->\\s+(\\d{2}:\\d{2}:\\d{2}[,.]\\d{3})$")
+    pattern=re.compile(r"^(\d{2}:\d{2}:\d{2}[,.]\d{3})\s+-->\s+(\d{2}:\d{2}:\d{2}[,.]\d{3})$")
     for block in blocks:
-        lines=block.replace("\\r","").splitlines()
+        lines=block.replace("\r","").splitlines()
         if len(lines)<3 or not lines[0].strip().isdigit() or not pattern.match(lines[1].strip()):
             raise ValueError("SRT format မမှန်ပါ။ 1 / timestamp --> timestamp / subtitle text ပုံစံကို စစ်ပါ။")
-        good.append("\\n".join(lines))
+        good.append("\n".join(lines))
     if not good: raise ValueError("SRT ထဲမှာ subtitle မရှိပါ။")
-    return "\\n\\n".join(good)+"\\n"
+    return "\n\n".join(good)+"\n"
 
 def transcribe(audio_path, api_key, model):
     from groq import Groq
@@ -166,14 +166,14 @@ def generate_recap(transcript,api_key,requested_model,style):
     notes=[]
     for idx,chunk in enumerate(chunks,1):
         prompt=("You are a careful movie-recap writer. Extract chronological plot facts, characters, motivations, key reveals, climax and ending. "
-                "Do not invent facts. Return concise notes in Burmese. This is chunk "+str(idx)+" of "+str(len(chunks))+".\\n\\n"+chunk)
+                "Do not invent facts. Return concise notes in Burmese. This is chunk "+str(idx)+" of "+str(len(chunks))+".\n\n"+chunk)
         resp=client.models.generate_content(model=model,contents=prompt)
         notes.append(resp.text or "")
     length_instruction={"တို":"တိုတောင်းသော recap","အလယ်အလတ်":"အလယ်အလတ်အရှည် recap","ရှည်":"အသေးစိတ်ရှည်လျားသော recap"}.get(style,"အလယ်အလတ်အရှည် recap")
     final_prompt=("အောက်ပါ plot notes ကို အခြေခံ၍ မြန်မာဘာသာဖြင့် သဘာဝကျပြီး နားထောင်ကောင်းသော movie recap narration ရေးပါ။ "
                   "အစ၊ အလယ်၊ အထွတ်အထိပ်၊ အဆုံးကို အစဉ်လိုက်ထိန်းပါ။ မူရင်းတွင်မရှိသောအဖြစ်အပျက် မတီထွင်ပါနှင့်။ "
-                  "ထပ်နေသောအကြောင်းအရာဖယ်ပါ။ "+length_instruction+" ဖြစ်ရမည်။ ခေါင်းစဉ်/မှတ်ချက်မထည့်ဘဲ ဖတ်ပြမည့်စာသားသာ ပြန်ပါ။\\n\\n"+
-                  "\\n\\n".join(notes)[:70000])
+                  "ထပ်နေသောအကြောင်းအရာဖယ်ပါ။ "+length_instruction+" ဖြစ်ရမည်။ ခေါင်းစဉ်/မှတ်ချက်မထည့်ဘဲ ဖတ်ပြမည့်စာသားသာ ပြန်ပါ။\n\n"+
+                  "\n\n".join(notes)[:70000])
     resp=client.models.generate_content(model=model,contents=final_prompt)
     text=(resp.text or "").strip()
     if not text: raise RuntimeError("Gemini က recap စာသားအလွတ် ပြန်ပေးပါတယ်။")
@@ -191,7 +191,7 @@ def create_voice(text,output,voice,speed):
     return output
 
 def esc_filter(path):
-    return str(path).replace("\\\\","/").replace(":","\\\\:").replace("'","\\\\'").replace(",","\\\\,")
+    return str(path).replace("\\\\","/").replace(":","\\:").replace("'","\\'").replace(",","\\,")
 
 def render_video(video,voice,output,subtitle=None,settings=None):
     settings=settings or {}
