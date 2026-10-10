@@ -19,7 +19,7 @@ A Streamlit-based Burmese movie recap workflow using FFmpeg, Groq Whisper, Googl
 4. Copy `.env.example` to `.env` and set keys in your shell (the app does not automatically load `.env`).
 5. `streamlit run app.py`
 
-In Settings, enter Groq and Gemini keys for the active session, or set `GROQ_API_KEY` and `GEMINI_API_KEY` as server environment variables. The Settings form is session-only; do not treat it as persistent secret storage. Hosted environment variables are the recommended durable option.
+In Settings, enter Groq and Gemini keys. For durable encrypted key storage, set `APP_ENCRYPTION_KEY` in the host environment using a fresh Fernet key generated with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Keep this key private and stable: changing it prevents previously encrypted keys from being decrypted. You can alternatively set `GROQ_API_KEY` and `GEMINI_API_KEY` as server environment variables. Without `APP_ENCRYPTION_KEY`, the Settings form only holds keys for the active session.
 
 ## Render
 Create a new Web Service from this repository and use Docker. Configure `GROQ_API_KEY`, `GEMINI_API_KEY`, and optionally `GEMINI_MODEL`. A persistent disk is required if project assets must survive redeploys. Free-tier availability, disk support, processing time, memory and CPU depend on the current Render plan; large full-length movies may exceed limits. Start with a short test clip.
@@ -31,5 +31,5 @@ Create Recap → upload movie → ONE CLICK RECAP → edit SRT / script → Voic
 - Gemini model selection checks the model list accessible to the configured API key; if the requested model is unavailable, the app selects a listed non-preview Flash model. Availability and quotas depend on Google account access.
 - Subtitle timing generated from the recap is a draft estimate, not forced alignment. Review before export.
 - Edge TTS voice availability can change. If Myanmar voices are unavailable, upload a narration file instead.
-- The current build does not include login/multi-user isolation or encrypted per-user API-key vaults. Use a private deployment and environment variables; do not expose a shared instance with private credentials.
+- The current build does not include login/multi-user isolation. Encrypted saved API keys are app-wide for this single-user/private deployment, not separate per user. Do not expose a shared public instance with private credentials.
 - Video editor preview currently previews the source video; overlay and render settings are applied by FFmpeg at export. Validate a short test clip first.
