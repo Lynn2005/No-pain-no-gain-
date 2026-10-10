@@ -204,30 +204,78 @@ def gemini_models(api_key):
         pass
     return sorted(set(names)),client
 
-def generate_recap(transcript,api_key,requested_model,style):
-    models,client=gemini_models(api_key)
-    if requested_model in models: model=requested_model
-    else:
-        preferred=[m for m in models if "flash" in m.lower() and "preview" not in m.lower()]
-        if not preferred: raise RuntimeError("Gemini API မှာ အသုံးပြုနိုင်တဲ့ text model မတွေ့ပါ။ Settings မှာ API key နဲ့ model access ကို စစ်ပါ။")
-        model=preferred[0]
-    # Chunk transcript to avoid sending an enormous single request.
-    chunks=[transcript[i:i+18000] for i in range(0,len(transcript),18000)]
-    notes=[]
-    for idx,chunk in enumerate(chunks,1):
-        prompt=("You are a careful movie-recap writer. Extract chronological plot facts, characters, motivations, key reveals, climax and ending. "
-                "Do not invent facts. Return concise notes in Burmese. This is chunk "+str(idx)+" of "+str(len(chunks))+".\n\n"+chunk)
-        resp=client.models.generate_content(model=model,contents=prompt)
-        notes.append(resp.text or "")
+def generate_recap(transcript,api_key,requested_model,style,groq_api_key=None):
     length_instruction={"တို":"တိုတောင်းသော recap","အလယ်အလတ်":"အလယ်အလတ်အရှည် recap","ရှည်":"အသေးစိတ်ရှည်လျားသော recap"}.get(style,"အလယ်အလတ်အရှည် recap")
-    final_prompt=("အောက်ပါ plot notes ကို အခြေခံ၍ မြန်မာဘာသာဖြင့် သဘာဝကျပြီး နားထောင်ကောင်းသော movie recap narration ရေးပါ။ "
-                  "အစ၊ အလယ်၊ အထွတ်အထိပ်၊ အဆုံးကို အစဉ်လိုက်ထိန်းပါ။ မူရင်းတွင်မရှိသောအဖြစ်အပျက် မတီထွင်ပါနှင့်။ "
-                  "ထပ်နေသောအကြောင်းအရာဖယ်ပါ။ "+length_instruction+" ဖြစ်ရမည်။ ခေါင်းစဉ်/မှတ်ချက်မထည့်ဘဲ ဖတ်ပြမည့်စာသားသာ ပြန်ပါ။\n\n"+
-                  "\n\n".join(notes)[:70000])
-    resp=client.models.generate_content(model=model,contents=final_prompt)
-    text=(resp.text or "").strip()
-    if not text: raise RuntimeError("Gemini က recap စာသားအလွတ် ပြန်ပေးပါတယ်။")
-    return text,model
+    chunks=[transcript[i:i+18000] for i in range(0,len(transcript),18000)]
+    def make_chunk_prompt(idx,chunk):
+        return ("You are a careful movie-recap writer. Extract chronological plot facts, characters, motivations, key reveals, climax and ending. "
+                "Do not invent facts. Return concise notes in Burmese. This is chunk "+str(idx)+" of "+str(len(chunks))+".\\n\\n"+chunk)
+    def make_final_prompt(notes):
+        return ("အောက်ပါ plot notes ကို အခြေခံ၍ မြန်မာဘာသာဖြင့် သဘာဝကျပြီး နားထောင်ကောင်းသော movie recap narration ရေးပါ။ "
+                "အစ၊ အလယ်၊ အထွတ်အထိပ်၊ အဆုံးကို အစဉ်လိုက်ထိန်းပါ။ မူရင်းတွင်မရှိသောအဖြစ်အပျက် မတီထွင်ပါနှင့်။ "
+                "ထပ်နေသောအကြောင်းအရာဖယ်ပါ။ "+length_instruction+" ဖြစ်ရမည်။ ခေါင်းစဉ်/မှတ်ချက်မထည့်ဘဲ ဖတ်ပြမည့်စာသားသာ ပြန်ပါ。\\n\\n".replace("。","。")+
+                "\\n\\n".join(notes)[:70000])
+    gemini_error=None
+    try:
+        models,client=gemini_models(api_key)
+        if requested_model in models:
+            model=requested_model
+        else:
+            preferred=[m for m in models if "flash" in m.lower() and "preview" not in m.lower()]
+            if not preferred:
+                raise RuntimeError("Gemini API မှာ အသုံးပြုနိုင်တဲ့ text model မတွေ့ပါ။")
+            model=preferred[0]
+        notes=[]
+        for idx,chunk in enumerate(chunks,1):
+            resp=client.models.generate_content(model=model,contents=make_chunk_prompt(idx,chunk))
+            notes.append(resp.text or "")
+        resp=client.models.generate_content(model=model,contents=make_final_prompt(notes))
+        recap=(resp.text or "").strip()
+        if not recap:
+            raise RuntimeError("Gemini က recap စာသားအလွတ် ပြန်ပေးပါတယ်။")
+        return recap,model
+    except Exception as exc:
+        gemini_error=exc
+    if not groq_api_key:
+        raise RuntimeError("Gemini recap မအောင်မြင်ပါ။ Groq API Key မရှိသောကြောင့် fallback မလုပ်နိုင်ပါ။ Gemini error: "+str(gemini_error))
+    try:
+        from groq import Groq
+        gc=Groq(api_key=groq_api_key,timeout=180,max_retries=1)
+        available=[]
+        try:
+            available=[getattr(m,"id","") for m in gc.models.list().data]
+        except Exception:
+            pass
+        preferred=["llama-3.3-70b-versatile","openai/gpt-oss-120b","llama-3.1-8b-instant","qwen/qwen3-32b"]
+        candidates=[m for m in preferred if not available or m in available]
+        candidates += [m for m in available if m and any(k in m.lower() for k in ("llama","qwen","gpt-oss")) and not any(k in m.lower() for k in ("whisper","guard","embed")) and m not in candidates]
+        if not candidates:
+            raise RuntimeError("Groq account မှာ recap အတွက် text model မတွေ့ပါ။")
+        errors=[]
+        for groq_model in candidates:
+            try:
+                notes=[]
+                for idx,chunk in enumerate(chunks,1):
+                    response=gc.chat.completions.create(
+                        model=groq_model,
+                        messages=[{"role":"system","content":"You are a careful movie-recap writer. Do not invent plot facts. Respond in natural Burmese."},
+                                  {"role":"user","content":make_chunk_prompt(idx,chunk)}],
+                        temperature=0.3,max_tokens=2048)
+                    notes.append((response.choices[0].message.content or "").strip())
+                response=gc.chat.completions.create(
+                    model=groq_model,
+                    messages=[{"role":"system","content":"မြန်မာဘာသာဖြင့် သဘာဝကျသော movie recap narration ရေးပါ။ မူရင်းတွင်မရှိသောအဖြစ်အပျက် မတီထွင်ပါနှင့်။"},
+                              {"role":"user","content":make_final_prompt(notes)}],
+                    temperature=0.5,max_tokens=4096)
+                recap=(response.choices[0].message.content or "").strip()
+                if recap:
+                    return recap,"Groq fallback · "+groq_model
+                errors.append(groq_model+": empty response")
+            except Exception as model_error:
+                errors.append(groq_model+": "+str(model_error)[:180])
+        raise RuntimeError("Groq fallback models မအောင်မြင်ပါ: "+" | ".join(errors))
+    except Exception as groq_error:
+        raise RuntimeError("Gemini quota/API error ဖြစ်ပြီး Groq fallback လည်း မအောင်မြင်ပါ။ Gemini: "+str(gemini_error)[:350]+" | Groq: "+str(groq_error)[:500])
 
 def create_voice(text,output,voice,speed):
     import asyncio
@@ -384,7 +432,7 @@ elif page=="Create Recap":
                     tpath=root/"original_transcript.txt"; tpath.write_text(transcript,encoding="utf-8")
                     data["assets"]["transcript"]=str(tpath); data["transcript_segments"]=segments
                     status.write("4/5 · Gemini recap generation")
-                    recap,actual_model=generate_recap(transcript,st.session_state.api_gemini,model,style)
+                    recap,actual_model=generate_recap(transcript,st.session_state.api_gemini,model,style,st.session_state.api_groq)
                     rpath=root/"burmese_recap.txt"; rpath.write_text(recap,encoding="utf-8")
                     data["assets"]["recap"]=str(rpath); data["gemini_model_used"]=actual_model
                     status.write("5/5 · Subtitle draft")
