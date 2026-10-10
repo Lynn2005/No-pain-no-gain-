@@ -243,10 +243,12 @@ def create_voice(text,output,voice,speed):
 def esc_filter(path):
     return str(path).replace("\\\\","/").replace(":","\\:").replace("'","\\'").replace(",","\\,")
 
-def render_video(video,voice,output,subtitle=None,settings=None):
+def render_video(video,voice,output,subtitle=None,settings=None,preview=False):
     settings=settings or {}
     meta=probe_video(video)
-    cmd=["ffmpeg","-y","-i",str(video),"-i",str(voice)]
+    cmd=["ffmpeg","-y"]
+    if preview: cmd += ["-ss","0","-t","8"]
+    cmd += ["-i",str(video),"-i",str(voice)]
     logo_path=settings.get("logo_path") if settings.get("logo_enabled") else None
     has_logo=bool(logo_path and Path(logo_path).exists())
     if has_logo: cmd += ["-i",str(logo_path)]
@@ -564,6 +566,26 @@ elif page in ("Subtitle Studio","Voice Studio","Video Editor","Export History"):
                     st.caption("Logo → Logo Adjust")
                 if st.button("Save editor settings"):
                     data["settings"]=settings; save_project(selected,row["title"],row["status"],data); st.success("Settings saved")
+                st.markdown("#### Edited preview")
+                if st.button("▶ Generate preview (first 8 seconds)"):
+                    voice_asset=Path(assets["voice"]) if assets.get("voice") else None
+                    if not voice_asset or not voice_asset.exists():
+                        st.warning("Preview အတွက် Voice Studio မှာ narration generate/upload လုပ်ပါ။")
+                    else:
+                        try:
+                            preview_path=root/"preview.mp4"
+                            subtitle_asset=Path(assets["srt"]) if assets.get("srt") and Path(assets["srt"]).exists() else None
+                            with st.spinner("Preview render လုပ်နေသည်…"):
+                                render_video(video,voice_asset,preview_path,subtitle_asset,settings,preview=True)
+                            data["assets"]["preview"]=str(preview_path)
+                            data["settings"]=settings
+                            save_project(selected,row["title"],row["status"],data)
+                            st.video(preview_path.read_bytes())
+                        except Exception as e:
+                            st.error("Preview render failed: "+str(e))
+                if assets.get("preview") and Path(assets["preview"]).exists():
+                    st.caption("Last generated preview. Generate again after changing settings.")
+                    st.video(Path(assets["preview"]).read_bytes())
                 if st.button("DONE — CONFIRM EDITS",type="primary"):
                     data["settings"]=settings; data["confirmed_settings"]=json.loads(json.dumps(settings))
                     save_project(selected,row["title"],"confirmed",data); st.success("Edit settings confirmed. Reopen or change settings and confirm again to update.")
