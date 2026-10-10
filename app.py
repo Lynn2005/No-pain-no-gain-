@@ -12,7 +12,8 @@ from urllib.parse import urlsplit, urljoin
 from pathlib import Path
 from datetime import datetime
 import requests
-import streamlit as st
+import os
+from flask import Flask, request, redirect, url_for, render_template_string, send_file
 from cryptography.fernet import Fernet, InvalidToken
 
 APP_NAME = "ONE CLICK — ONE MOVIE RECAP"
@@ -22,23 +23,6 @@ PROJECTS = BASE / "projects"
 for p in (BASE, UPLOADS, PROJECTS):
     p.mkdir(parents=True, exist_ok=True)
 DB = BASE / "recap.db"
-
-st.set_page_config(page_title=APP_NAME, page_icon="🎬", layout="wide", initial_sidebar_state="expanded")
-st.markdown("""
-<style>
-:root { color-scheme: dark; }
-.stApp { background: radial-gradient(ellipse at top right,#20203a 0,#101117 42%,#0b0c10 100%); }
-.block-container {max-width: 1450px; padding-top: 1.2rem; padding-bottom: 3rem}
-.hero {padding:1.6rem 1.7rem;border:1px solid #393852;border-radius:20px;background:linear-gradient(120deg,#191927,#27213e 65%,#172438);margin-bottom:1.2rem}
-.hero h1 {font-size:clamp(1.6rem,4vw,2.6rem);letter-spacing:-.04em;margin:0}
-.hero p {color:#c4c5d7;margin:.5rem 0 0}
-div[data-testid="stMetric"] {background:#171821;border:1px solid #30313e;padding:12px;border-radius:14px}
-.stButton>button,.stDownloadButton>button {border-radius:11px;font-weight:650;min-height:2.7rem}
-div[data-testid="stFileUploader"] {border:1px dashed #55516f;border-radius:14px;padding:8px}
-section[data-testid="stSidebar"] {background:#11121a;border-right:1px solid #292a38}
-</style>
-<div class="hero"><h1>🎬 ONE CLICK — ONE MOVIE RECAP</h1><p>Upload a movie · Create a Burmese recap · Preview, edit and export</p></div>
-""", unsafe_allow_html=True)
 
 def db():
     con = sqlite3.connect(DB, timeout=30)
@@ -436,323 +420,225 @@ def render_video(video,voice,output,subtitle=None,settings=None,preview=False):
 def project_dir(pid):
     p=PROJECTS/pid; p.mkdir(parents=True,exist_ok=True); return p
 
-def put_download(label,path,name,mime):
-    path=Path(path)
-    if path.exists():
-        st.download_button(label,path.read_bytes(),file_name=name,mime=mime,use_container_width=True)
 
-with st.sidebar:
-    st.markdown("### Navigation")
-    page=st.radio("Go to",["Dashboard","Create Recap","Subtitle Studio","Voice Studio","Video Editor","Export History","Settings"],label_visibility="collapsed")
-    st.divider()
-    st.caption("Provider status")
-    st.write("Whisper: Groq API")
-    st.write("Recap: Gemini API")
-    st.write("Voice: Edge TTS (my-MM)")
-    st.caption("Projects are stored on this server's data directory. Hosted disk persistence depends on deployment settings.")
+app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 210 * 1024 * 1024
 
-if "active_project" not in st.session_state: st.session_state.active_project=""
-saved_keys=load_saved_keys()
-if "api_groq" not in st.session_state: st.session_state.api_groq=os.getenv("GROQ_API_KEY","") or saved_keys.get("groq_key","")
-if "api_gemini" not in st.session_state: st.session_state.api_gemini=os.getenv("GEMINI_API_KEY","") or saved_keys.get("gemini_key","")
-if "api_gemini_model" not in st.session_state: st.session_state.api_gemini_model=os.getenv("GEMINI_MODEL","gemini-3.8-flash")
+PAGE = r"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ title or "ONE CLICK — ONE MOVIE RECAP" }}</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top right,#20203a 0,#101117 45%,#0b0c10 100%);color:#f3f3fa;font:16px/1.55 system-ui,-apple-system,sans-serif}
+main{max-width:1000px;margin:auto;padding:24px 16px 60px}.hero,.panel{border:1px solid #353548;border-radius:18px;background:#171821;padding:22px;margin:0 0 18px}.hero{background:linear-gradient(120deg,#191927,#27213e 65%,#172438)}h1{font-size:clamp(1.5rem,5vw,2.4rem);margin:0}h2{margin-top:0;font-size:1.25rem}p{color:#c9c9d9}.muted{color:#a7a8ba;font-size:.9rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}.field{margin:12px 0}label{display:block;font-weight:650;margin-bottom:6px}input,select,textarea{width:100%;padding:12px;border-radius:10px;border:1px solid #44465a;background:#0e1018;color:#fff;font:inherit}textarea{min-height:210px;resize:vertical}button,.btn{display:inline-block;border:0;border-radius:10px;padding:12px 16px;background:#8b78ff;color:white;font-weight:750;font-size:1rem;text-decoration:none;cursor:pointer}button:hover,.btn:hover{filter:brightness(1.1)}.secondary{background:#303143}.error{border:1px solid #8e3e4b;background:#351c24;padding:12px;border-radius:10px;color:#ffc5cc}.ok{border:1px solid #286b57;background:#142b25;padding:12px;border-radius:10px}.card{padding:14px;border:1px solid #353548;border-radius:12px;margin:10px 0}.actions{display:flex;gap:10px;flex-wrap:wrap}.pill{font-size:.8rem;background:#2a2b3a;border-radius:99px;padding:4px 9px;color:#d9d8f4}a{color:#c8beff}small{color:#b4b5c7}hr{border:0;border-top:1px solid #353548;margin:20px 0}
+</style></head><body><main>
+<header class="hero"><h1>🎬 ONE CLICK — ONE MOVIE RECAP</h1><p>Upload a video or direct video URL · Generate Burmese recap, subtitles and narration.</p><span class="pill">Render Web App · No Streamlit</span></header>
+{% if msg %}<div class="ok">{{ msg }}</div>{% endif %}
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+{{ body|safe }}
+<footer class="muted">Free hosting uses temporary storage. Download your files after processing; they may disappear after restart or redeploy.</footer>
+</main></body></html>"""
 
-projects=load_projects()
-if page=="Dashboard":
-    rows=projects
-    a,b,c=st.columns(3)
-    a.metric("Projects",len(rows))
-    b.metric("Completed",sum(r["status"]=="completed" for r in rows))
-    c.metric("Processing / draft",sum(r["status"] not in ("completed","failed") for r in rows))
-    st.markdown("### Recent projects")
-    if not rows: st.info("Project မရှိသေးပါ။ Create Recap မှာ movie တင်ပြီး စတင်ပါ။")
-    for r in rows[:8]:
-        data=json.loads(r["data"])
-        with st.container(border=True):
-            x,y,z=st.columns([5,2,2])
-            x.markdown("**"+r["title"]+"**")
-            y.write(r["status"].upper())
-            if z.button("Open",key="open_"+r["id"]):
-                st.session_state.active_project=r["id"]; st.session_state["selected_page"]="Video Editor"; st.rerun()
-            st.caption(f"Created {r['created_at']} · {r['id'][:8]}")
-            if r["error"]: st.error(r["error"][:300])
+HOME = r"""
+<section class="panel"><h2>🚀 Create a recap</h2>
+<p>Direct downloadable video files only (MP4, MOV, MKV, WEBM, AVI, M4V), up to 200 MB. YouTube/Netflix pages are not direct video files.</p>
+<form method="post" action="/create" enctype="multipart/form-data">
+<div class="grid">
+<div class="field"><label for="movie">Upload video file</label><input id="movie" name="movie" type="file" accept=".mp4,.mov,.mkv,.webm,.avi,.m4v,video/*"></div>
+<div class="field"><label for="video_url">Or direct video URL</label><input id="video_url" name="video_url" type="url" placeholder="https://example.com/video.mp4"></div>
+</div>
+<div class="grid">
+<div class="field"><label for="style">Recap length</label><select id="style" name="style"><option>တို</option><option selected>အလယ်အလတ်</option><option>ရှည်</option></select></div>
+<div class="field"><label for="model">Whisper model</label><select id="model" name="model"><option>whisper-large-v3-turbo</option><option>whisper-large-v3</option></select></div>
+<div class="field"><label for="gemini_model">Gemini model (optional)</label><input id="gemini_model" name="gemini_model" value="{{ default_model }}"></div>
+</div>
+<hr><h2>API keys</h2><p class="muted">Render Environment Variables (GROQ_API_KEY and GEMINI_API_KEY) are recommended. Keys entered here are used for this request only and are not saved to the database.</p>
+<div class="grid"><div class="field"><label for="groq_key">Groq API key</label><input id="groq_key" name="groq_key" type="password" autocomplete="off" placeholder="Use Render environment variable if configured"></div>
+<div class="field"><label for="gemini_key">Gemini API key</label><input id="gemini_key" name="gemini_key" type="password" autocomplete="off" placeholder="Use Render environment variable if configured"></div></div>
+<button type="submit">🚀 ONE CLICK RECAP</button></form></section>
+<section class="panel"><h2>📁 Recent projects</h2>
+{% if projects %}{% for p in projects %}<div class="card"><strong>{{ p["title"] }}</strong> <span class="pill">{{ p["status"] }}</span><p class="muted">{{ p["created_at"] }} · {{ p["id"] }}</p>{% if p["error"] %}<p>{{ p["error"][:250] }}</p>{% endif %}<a class="btn secondary" href="/project/{{ p['id'] }}">Open project</a></div>{% endfor %}{% else %}<p>No projects yet. Upload a short clip to get started.</p>{% endif %}
+</section>
+<section class="panel"><h2>⚙️ Render configuration</h2><p>Set <code>GROQ_API_KEY</code> and <code>GEMINI_API_KEY</code> in Render → your service → Environment for the simplest setup. FFmpeg/FFprobe are installed by the Docker image.</p><p class="muted">This public demo has no login. Anyone with the URL may submit jobs and use server resources. Do not enter private information or deploy personal keys to a shared public app.</p></section>
+"""
 
-elif page=="Create Recap":
-    st.markdown("### Create a new movie recap")
-    source_mode=st.radio("Video source",["Upload movie file","Direct video URL"],horizontal=True,key="video_source_mode")
-    uploaded=None
-    movie_url=""
-    if source_mode=="Upload movie file":
-        uploaded=st.file_uploader("Upload movie / video",type=["mp4","mov","mkv","webm","avi","m4v"],key="movie_upload")
-    else:
-        movie_url=st.text_input("Direct downloadable video URL",placeholder="https://example.com/video.mp4",key="movie_url_input")
-        st.caption("Direct MP4/MOV/MKV/WEBM/AVI/M4V ဖိုင် link ကိုသာ လက်ခံပါတယ်။ YouTube/Netflix/streaming page link မဟုတ်ပါ။ ကိုယ်ပိုင် သို့မဟုတ် အသုံးပြုခွင့်ရှိတဲ့ video ကိုသာ သုံးပါ။ URL download limit 200 MB ဖြစ်ပါတယ်။")
-    style=st.select_slider("Recap length",options=["တို","အလယ်အလတ်","ရှည်"],value="အလယ်အလတ်")
-    groq_model=st.selectbox("Whisper model",["whisper-large-v3-turbo","whisper-large-v3"])
-    model=st.text_input("Gemini model (auto-detect if unavailable)",value=st.session_state.api_gemini_model)
-    st.caption("Keys ကို Settings မှာထည့်ပါ။ Video processing က server CPU/RAM/disk လိုအပ်ပါတယ်။ Free hosting မှာ short clip နဲ့ စမ်းပါ။")
-    if uploaded:
-        st.video(uploaded)
-        st.write(f"File: {uploaded.name} · {uploaded.size/1024/1024:.1f} MB")
-    can_process=bool(uploaded) or (source_mode=="Direct video URL" and bool(movie_url.strip()))
-    if st.button("🚀 ONE CLICK RECAP",type="primary",use_container_width=True,disabled=not can_process):
-        if not st.session_state.api_groq or not st.session_state.api_gemini:
-            st.error("Settings မှာ Groq နဲ့ Gemini API Key ထည့်ပါ။")
-        elif not ffmpeg_ok():
-            st.error("FFmpeg/FFprobe မတွေ့ပါ။ Deployment မှာ FFmpeg install လုပ်ထားရပါမယ်။")
+PROJECT = r"""
+<div class="panel"><div class="actions"><a class="btn secondary" href="/">← Home</a><a class="btn secondary" href="/download/{{ pid }}/video">Download source video</a></div>
+<h2>{{ row["title"] }}</h2><p><span class="pill">{{ row["status"] }}</span> · {{ row["created_at"] }}</p>
+{% if row["error"] %}<div class="error">{{ row["error"] }}</div>{% endif %}
+{% if data.get("meta") %}<p class="muted">{{ data["meta"].get("width","?") }}×{{ data["meta"].get("height","?") }} · {{ "%.1f"|format(data["meta"].get("duration",0)) }} seconds</p>{% endif %}
+{% if assets.get("transcript") and exists(assets.get("transcript")) %}<div class="card"><h2>Original transcript</h2><a class="btn secondary" href="/download/{{ pid }}/transcript">Download transcript TXT</a></div>{% endif %}
+{% if assets.get("recap") and exists(assets.get("recap")) %}
+<form method="post" action="/project/{{ pid }}/script" class="card"><h2>မြန်မာ Movie Recap Script</h2><textarea name="script">{{ read_text(assets["recap"]) }}</textarea><button type="submit">Save script + regenerate SRT</button></form>
+{% endif %}
+{% if assets.get("srt") and exists(assets.get("srt")) %}<div class="card"><h2>Subtitles</h2><a class="btn secondary" href="/download/{{ pid }}/srt">Download SRT</a><p class="muted">Subtitle timing is a draft estimate; review before publishing.</p></div>{% endif %}
+{% if assets.get("voice") and exists(assets.get("voice")) %}<div class="card"><h2>Narration audio</h2><audio controls style="width:100%" src="/download/{{ pid }}/voice"></audio><p><a class="btn secondary" href="/download/{{ pid }}/voice">Download narration</a></p></div>{% endif %}
+<div class="panel"><h2>🎙️ Generate Burmese narration</h2><form method="post" action="/project/{{ pid }}/voice"><div class="grid"><div class="field"><label>Voice</label><select name="voice"><option>my-MM-NilarNeural</option><option>my-MM-ThihaNeural</option></select></div><div class="field"><label>Speed (%)</label><input type="number" name="speed" value="0" min="-30" max="30"></div></div><button type="submit">Generate narration</button></form></div>
+<div class="panel"><h2>🎞️ Render final MP4</h2><form method="post" action="/project/{{ pid }}/render"><div class="grid"><div class="field"><label>Audio output</label><select name="audio_mode"><option>Narration only</option><option>Mix narration + original</option><option>Original audio only</option></select></div><div class="field"><label>Subtitle font size</label><input type="number" name="subtitle_size" value="22" min="12" max="48"></div></div><label><input type="checkbox" name="subtitles_enabled" checked style="width:auto"> Enable subtitles</label><p><button type="submit">Render final MP4</button></p></form>
+{% if assets.get("final") and exists(assets.get("final")) %}<a class="btn" href="/download/{{ pid }}/final">Download final MP4</a><video controls style="width:100%;margin-top:12px" src="/download/{{ pid }}/final"></video>{% endif %}
+</div></div>
+"""
+
+def page(body, title=None, msg="", error="", **context):
+    return render_template_string(PAGE, body=render_template_string(body, **context), title=title,
+                                  msg=msg, error=error)
+
+def project_assets(pid):
+    if not re.fullmatch(r"[a-f0-9]{12}", pid or ""):
+        raise ValueError("Project ID မမှန်ပါ။")
+    row=load_project(pid)
+    if row is None:
+        raise LookupError("Project မတွေ့ပါ။")
+    data=json.loads(row["data"])
+    return row,data,data.get("assets",{}),project_dir(pid)
+
+@app.get("/")
+def home():
+    projects=load_projects()
+    return page(HOME, projects=projects[:12], default_model=os.getenv("GEMINI_MODEL","gemini-3.8-flash"))
+
+@app.post("/create")
+def create():
+    uploaded=request.files.get("movie")
+    movie_url=(request.form.get("video_url") or "").strip()
+    groq_key=(request.form.get("groq_key") or os.getenv("GROQ_API_KEY","")).strip()
+    gemini_key=(request.form.get("gemini_key") or os.getenv("GEMINI_API_KEY","")).strip()
+    model=(request.form.get("gemini_model") or os.getenv("GEMINI_MODEL","gemini-3.8-flash")).strip()
+    style=request.form.get("style","အလယ်အလတ်")
+    groq_model=request.form.get("model","whisper-large-v3-turbo")
+    if not groq_key or not gemini_key:
+        return page(HOME, error="Groq နဲ့ Gemini API Key နှစ်ခုလုံးလိုအပ်ပါတယ်။ Render Environment Variables ထဲမှာ သတ်မှတ်နိုင်ပါတယ်။",
+                    projects=load_projects()[:12],default_model=model), 400
+    if not (uploaded and uploaded.filename) and not movie_url:
+        return page(HOME,error="Video file တင်ပါ သို့မဟုတ် direct video URL ထည့်ပါ။",projects=load_projects()[:12],default_model=model),400
+    if not ffmpeg_ok():
+        return page(HOME,error="FFmpeg/FFprobe မတွေ့ပါ။ Docker image ကို စစ်ပါ။",projects=load_projects()[:12],default_model=model),500
+    pid=uuid.uuid4().hex[:12]
+    root=project_dir(pid)
+    movie_name=""
+    try:
+        if uploaded and uploaded.filename:
+            extension=Path(uploaded.filename).suffix.lower()
+            if extension not in VIDEO_EXTENSIONS:
+                raise ValueError("MP4/MOV/MKV/WEBM/AVI/M4V video ကိုသာ တင်ပါ။")
+            original=root/("movie"+extension)
+            uploaded.save(original)
+            if original.stat().st_size > MAX_REMOTE_VIDEO_BYTES:
+                original.unlink(missing_ok=True)
+                raise ValueError("Video ဖိုင်က 200 MB ထက်ကြီးနေပါတယ်။")
+            movie_name=Path(uploaded.filename).name[:180]
         else:
-            pid=uuid.uuid4().hex[:12]; root=project_dir(pid)
-            try:
-                if source_mode=="Direct video URL":
-                    with st.spinner("Video URL ကို လုံခြုံရေးစစ်ပြီး download လုပ်နေပါတယ်…"):
-                        original,movie_name=download_direct_video(movie_url,root)
-                else:
-                    movie_name=uploaded.name
-                    original=root/("movie"+Path(uploaded.name).suffix.lower())
-                    original.write_bytes(uploaded.getvalue())
-            except Exception as e:
-                st.error("Video download/upload မအောင်မြင်ပါ: "+str(e))
-                st.stop()
-            data={"video":str(original),"assets":{},"settings":{"subtitles_enabled":True,"text_enabled":False,"blur_enabled":False,"logo_enabled":False},"style":style}
-            save_project(pid,movie_name,"processing",data)
-            st.session_state.active_project=pid
-            try:
-                with st.status("Processing movie…",expanded=True) as status:
-                    status.write("1/5 · Video metadata စစ်နေသည်")
-                    meta=probe_video(original); data["meta"]=meta
-                    audio=root/"source_audio.mp3"
-                    if not meta["has_audio"]: raise RuntimeError("ဒီ video မှာ audio stream မရှိပါ။ Voice file ထည့်ပြီး editor ကနေ render လုပ်နိုင်ပါတယ်။")
-                    status.write("2/5 · FFmpeg ဖြင့် audio ထုတ်နေသည်")
-                    run_cmd(["ffmpeg","-y","-i",str(original),"-vn","-ac","1","-ar","16000","-b:a","64k",str(audio)],timeout=900)
-                    data["assets"]["source_audio"]=str(audio)
-                    status.write("3/5 · Groq Whisper transcription")
-                    transcript,segments=transcribe(audio,st.session_state.api_groq,groq_model)
-                    tpath=root/"original_transcript.txt"; tpath.write_text(transcript,encoding="utf-8")
-                    data["assets"]["transcript"]=str(tpath); data["transcript_segments"]=segments
-                    status.write("4/5 · Gemini recap generation")
-                    recap,actual_model=generate_recap(transcript,st.session_state.api_gemini,model,style,st.session_state.api_groq)
-                    rpath=root/"burmese_recap.txt"; rpath.write_text(recap,encoding="utf-8")
-                    data["assets"]["recap"]=str(rpath); data["gemini_model_used"]=actual_model
-                    status.write("5/5 · Subtitle draft")
-                    srtpath=root/"burmese_recap.srt"
-                    srtpath.write_text(make_srt(recap,meta["duration"]),encoding="utf-8")
-                    data["assets"]["srt"]=str(srtpath)
-                    status.write("6/6 · Burmese narration generation")
-                    try:
-                        voicepath=root/"narration.mp3"
-                        create_voice(recap,voicepath,"my-MM-NilarNeural",0)
-                        data["assets"]["voice"]=str(voicepath)
-                        data["voice_provider"]="edge-tts my-MM-NilarNeural"
-                    except Exception as tts_error:
-                        data["tts_error"]=str(tts_error)[:500]
-                    data["status"]="draft"
-                    save_project(pid,movie_name,"draft",data)
-                    status.update(label="Recap assets prepared",state="complete")
-                st.success("Transcript, Burmese recap နဲ့ SRT draft ရပါပြီ။")
-                if data.get("assets",{}).get("voice"):
-                    st.success("AI narration ကိုလည်း အလိုအလျောက် ထုတ်ပြီးပါပြီ။ Video Editor မှာ preview / render ဆက်လုပ်နိုင်ပါတယ်။")
-                else:
-                    st.warning("Recap ကိုသိမ်းထားပါတယ်၊ ဒါပေမဲ့ AI voice မထွက်ပါ။ Voice Studio မှာ ပြန်စမ်းပါ သို့မဟုတ် audio upload လုပ်ပါ။")
-                    if data.get("tts_error"): st.caption(data["tts_error"])
-                st.rerun()
-            except Exception as e:
-                save_project(pid,movie_name,"failed",data,str(e))
-                st.error("Processing failed: "+str(e))
+            original,movie_name=download_direct_video(movie_url,root)
+        data={"video":str(original),"assets":{},"settings":{"subtitles_enabled":True,"text_enabled":False,"blur_enabled":False,"logo_enabled":False},"style":style}
+        save_project(pid,movie_name,"processing",data)
+        meta=probe_video(original); data["meta"]=meta
+        if not meta["has_audio"]:
+            raise RuntimeError("ဒီ video မှာ audio stream မရှိပါ။ Audio ပါတဲ့ video ကိုသုံးပါ။")
+        audio=root/"source_audio.mp3"
+        run_cmd(["ffmpeg","-y","-i",str(original),"-vn","-ac","1","-ar","16000","-b:a","64k",str(audio)],timeout=900)
+        data["assets"]["source_audio"]=str(audio)
+        transcript,segments=transcribe(audio,groq_key,groq_model)
+        tpath=root/"original_transcript.txt"; tpath.write_text(transcript,encoding="utf-8")
+        data["assets"]["transcript"]=str(tpath); data["transcript_segments"]=segments
+        recap,actual_model=generate_recap(transcript,gemini_key,model,style,groq_key)
+        rpath=root/"burmese_recap.txt"; rpath.write_text(recap,encoding="utf-8")
+        data["assets"]["recap"]=str(rpath); data["gemini_model_used"]=actual_model
+        srtpath=root/"burmese_recap.srt"; srtpath.write_text(make_srt(recap,meta["duration"]),encoding="utf-8")
+        data["assets"]["srt"]=str(srtpath)
+        try:
+            voicepath=root/"narration.mp3"
+            create_voice(recap,voicepath,"my-MM-NilarNeural",0)
+            data["assets"]["voice"]=str(voicepath); data["voice_provider"]="edge-tts my-MM-NilarNeural"
+        except Exception as exc:
+            data["tts_error"]=str(exc)[:500]
+        save_project(pid,movie_name,"draft",data)
+        return redirect(url_for("project_view",pid=pid, msg="Recap generated successfully."))
+    except Exception as exc:
+        save_project(pid,movie_name or "Movie recap","failed",data if "data" in locals() else {},str(exc)[:1800])
+        return page(HOME,error="Processing failed: "+str(exc)[:900],projects=load_projects()[:12],default_model=model),500
 
-elif page=="Settings":
-    st.markdown("### API & provider settings")
-    st.info("Persistent encrypted Save အတွက် hosting Environment Variables ထဲမှာ APP_ENCRYPTION_KEY သတ်မှတ်ပါ။ Key မသတ်မှတ်ထားလျှင် settings သည် session-only ဖြစ်ပြီး permanent success မပြပါ။ Public/shared app အတွက် authentication မပါသေးသောကြောင့် private deployment သာသုံးပါ။")
-    with st.form("provider_settings"):
-        groq=st.text_input("Groq API Key",value=st.session_state.api_groq,type="password")
-        gemini=st.text_input("Gemini API Key",value=st.session_state.api_gemini,type="password")
-        model=st.text_input("Preferred Gemini model",value=st.session_state.api_gemini_model)
-        submitted=st.form_submit_button("Save settings",type="primary")
-    if submitted:
-        st.session_state.api_groq=groq.strip(); st.session_state.api_gemini=gemini.strip(); st.session_state.api_gemini_model=model.strip() or "gemini-3.8-flash"
-        if encryption_box() is not None:
-            try:
-                save_encrypted_keys(st.session_state.api_groq,st.session_state.api_gemini)
-                st.success("API keys saved encrypted to persistent server storage.")
-            except Exception as e:
-                st.error("Encrypted save failed: "+str(e))
-        else:
-            st.warning("Keys are available for this session only. Set APP_ENCRYPTION_KEY in hosting Environment Variables for encrypted persistent saving.")
-    c1,c2=st.columns(2)
-    c1.markdown("[Get Groq API key](https://console.groq.com/keys)")
-    c2.markdown("[Get Gemini API key](https://aistudio.google.com/apikey)")
-    if st.button("Test API connections"):
-        if not st.session_state.api_groq or not st.session_state.api_gemini: st.error("API key နှစ်ခုလုံး ထည့်ပါ။")
-        else:
-            try:
-                from groq import Groq
-                gm=Groq(api_key=st.session_state.api_groq,timeout=20,max_retries=0)
-                gm.models.list()
-                names,client=gemini_models(st.session_state.api_gemini)
-                st.success("Groq connection OK")
-                if names: st.success("Gemini connection OK · "+", ".join(names[:8]))
-                else: st.warning("Gemini key သည် မမှန်နိုင်ပါ သို့မဟုတ် model list access မရပါ။")
-            except Exception as e: st.error("Connection test failed: "+str(e)[:500])
+@app.get("/project/<pid>")
+def project_view(pid):
+    try:
+        row,data,assets,root=project_assets(pid)
+        return page(PROJECT,title=row["title"],pid=pid,row=row,data=data,assets=assets,
+                    exists=lambda p: bool(p and Path(p).is_file()),
+                    read_text=lambda p: Path(p).read_text(encoding="utf-8") if p and Path(p).is_file() else "")
+    except (ValueError,LookupError) as exc:
+        return page('<section class="panel"><h2>Project error</h2><p>{{ error }}</p><a href="/">Home</a></section>',error=str(exc)),404
 
-elif page in ("Subtitle Studio","Voice Studio","Video Editor","Export History"):
-    rows=load_projects()
-    if page=="Export History":
-        st.markdown("### Export history")
-        if not rows: st.info("Project မရှိသေးပါ။")
-        for r in rows:
-            data=json.loads(r["data"])
-            with st.container(border=True):
-                st.markdown("**"+r["title"]+"** · "+r["status"])
-                if r["error"]: st.error(r["error"][:400])
-                final=data.get("assets",{}).get("final")
-                if final and Path(final).exists(): put_download("Download MP4",final,Path(final).name,"video/mp4")
-                if st.button("Delete project",key="delete_"+r["id"]):
-                    if st.session_state.get("confirm_delete")==r["id"]:
-                        shutil.rmtree(PROJECTS/r["id"],ignore_errors=True)
-                        with db() as con: con.execute("DELETE FROM projects WHERE id=?",(r["id"],)); con.commit()
-                        st.session_state.confirm_delete=""; st.rerun()
-                    else:
-                        st.session_state.confirm_delete=r["id"]; st.warning("ဖျက်ရန် Delete project ကို ထပ်နှိပ်ပါ။")
-    else:
-        options={r["id"]:f"{r['title']} · {r['status']}" for r in rows}
-        if not options: st.info("Project မရှိသေးပါ။ Create Recap မှာ စတင်ပါ။")
-        else:
-            selected=st.selectbox("Project",list(options),format_func=lambda x:options[x],index=list(options).index(st.session_state.active_project) if st.session_state.active_project in options else 0)
-            st.session_state.active_project=selected
-            row=load_project(selected); data=json.loads(row["data"]); assets=data.get("assets",{}); root=project_dir(selected)
-            video=Path(data["video"]) if data.get("video") else None
-            if page=="Subtitle Studio":
-                st.markdown("### Subtitle Studio")
-                srt_path=Path(assets["srt"]) if assets.get("srt") else root/"burmese_recap.srt"
-                current=srt_path.read_text(encoding="utf-8") if srt_path.exists() else ""
-                srt_upload=st.file_uploader("Import external SRT",type=["srt"],key="srt_import_"+selected)
-                if srt_upload:
-                    try: current=validate_srt(srt_upload.getvalue().decode("utf-8-sig"))
-                    except Exception as e: st.error(str(e))
-                if "recap" in assets and Path(assets["recap"]).exists():
-                    recap=Path(assets["recap"]).read_text(encoding="utf-8")
-                    with st.expander("Generate SRT draft from recap"):
-                        chars=st.slider("Characters per line",10,45,25)
-                        lines=st.slider("Max lines",1,3,2)
-                        dur=float(data.get("meta",{}).get("duration",180))
-                        if st.button("Regenerate SRT draft"):
-                            current=make_srt(recap,dur,chars,lines)
-                edited=st.text_area("SRT editor",value=current,height=400)
-                if st.button("Save SRT",type="primary"):
-                    try:
-                        checked=validate_srt(edited); srt_path.write_text(checked,encoding="utf-8")
-                        assets["srt"]=str(srt_path); data["assets"]=assets; save_project(selected,row["title"],"draft",data)
-                        st.success("SRT saved")
-                    except Exception as e: st.error(str(e))
-                st.download_button("Download SRT",edited,file_name="burmese_recap.srt",mime="application/x-subrip",use_container_width=True)
-                st.caption("SRT draft timing is approximate. Narration-based precise word alignment is not available in this first build.")
-            elif page=="Voice Studio":
-                st.markdown("### Voice Studio")
-                recap_path=Path(assets["recap"]) if assets.get("recap") else None
-                recap=recap_path.read_text(encoding="utf-8") if recap_path and recap_path.exists() else ""
-                script=st.text_area("Narration script",value=recap,height=280)
-                voice=st.selectbox("Myanmar voice",["my-MM-NilarNeural","my-MM-ThihaNeural"])
-                speed=st.slider("Speaking speed (%)",-30,30,0)
-                uploaded_voice=st.file_uploader("Or upload existing narration",type=["mp3","wav","m4a","aac"],key="voice_upload_"+selected)
-                if st.button("Save script",key="save_script"):
-                    if recap_path: recap_path.write_text(script,encoding="utf-8")
-                    st.success("Script saved")
-                if st.button("Generate narration",type="primary"):
-                    try:
-                        if uploaded_voice:
-                            vp=root/("uploaded_voice"+Path(uploaded_voice.name).suffix.lower()); vp.write_bytes(uploaded_voice.getvalue())
-                        else:
-                            if not script.strip(): raise ValueError("Narration script အလွတ်ဖြစ်နေပါတယ်။")
-                            vp=root/"narration.mp3"; create_voice(script,vp,voice,speed)
-                        assets["voice"]=str(vp); data["assets"]=assets; data["voice_provider"]="uploaded audio" if uploaded_voice else "edge-tts "+voice
-                        save_project(selected,row["title"],"draft",data)
-                        st.success("Narration audio saved")
-                    except Exception as e: st.error("Voice generation failed: "+str(e))
-                vp=Path(assets["voice"]) if assets.get("voice") else None
-                if vp and vp.exists():
-                    st.audio(vp.read_bytes()); st.caption(f"Voice file: {vp.name} · {vp.stat().st_size/1024:.0f} KB")
-                    put_download("Download narration",vp,vp.name,"audio/mpeg")
-            elif page=="Video Editor":
-                st.markdown("### Video Editor · live source preview")
-                if video and video.exists():
-                    st.video(str(video))
-                    meta=data.get("meta",{})
-                    st.caption(f"{meta.get('width','?')}×{meta.get('height','?')} · {meta.get('duration',0):.1f}s · {video.stat().st_size/1024/1024:.1f} MB")
-                settings=data.setdefault("settings",{})
-                settings.setdefault("subtitles_enabled",True); settings.setdefault("text_enabled",False); settings.setdefault("blur_enabled",False); settings.setdefault("logo_enabled",False)
-                settings["audio_mode"]=st.selectbox("Audio output",["Narration only","Mix narration + original","Original audio only"],index=["Narration only","Mix narration + original","Original audio only"].index(settings.get("audio_mode","Narration only")))
-                tool=st.radio("Adjust tool",["Subtitle","Text","Blur","Logo"],horizontal=True)
-                if tool=="Subtitle":
-                    settings["subtitles_enabled"]=st.checkbox("Enable subtitles",value=settings["subtitles_enabled"])
-                    settings["subtitle_size"]=st.slider("Subtitle font size",12,48,int(settings.get("subtitle_size",22)))
-                    st.caption("Subtitle → Subtitle Adjust")
-                elif tool=="Text":
-                    settings["text_enabled"]=st.checkbox("Enable text",value=settings["text_enabled"])
-                    settings["overlay_text"]=st.text_input("Overlay text",value=settings.get("overlay_text",""))
-                    settings["text_size"]=st.slider("Text size",8,120,int(settings.get("text_size",32)))
-                    settings["text_color"]=st.color_picker("Text color",settings.get("text_color","#FFFFFF"))
-                    settings["text_x"]=st.slider("X position",0,1000,int(settings.get("text_x",20)))
-                    settings["text_y"]=st.slider("Y position",0,1000,int(settings.get("text_y",20)))
-                    st.caption("Text → Text Adjust")
-                elif tool=="Blur":
-                    settings["blur_enabled"]=st.checkbox("Enable blur",value=settings["blur_enabled"])
-                    settings["blur_x"]=st.slider("Blur X",0,1000,int(settings.get("blur_x",20)))
-                    settings["blur_y"]=st.slider("Blur Y",0,1000,int(settings.get("blur_y",20)))
-                    settings["blur_w"]=st.slider("Blur width",20,1000,int(settings.get("blur_w",200)))
-                    settings["blur_h"]=st.slider("Blur height",20,600,int(settings.get("blur_h",80)))
-                    settings["blur_strength"]=st.slider("Blur intensity",1,30,int(settings.get("blur_strength",8)))
-                    st.caption("Blur → Blur Adjust")
-                else:
-                    settings["logo_enabled"]=st.checkbox("Enable logo",value=settings["logo_enabled"])
-                    logo=st.file_uploader("Upload transparent PNG logo",type=["png"],key="logo_"+selected)
-                    if logo:
-                        lp=root/"logo.png"; lp.write_bytes(logo.getvalue()); settings["logo_path"]=str(lp)
-                    settings["logo_x"]=st.slider("Logo X",0,1000,int(settings.get("logo_x",20)))
-                    settings["logo_y"]=st.slider("Logo Y",0,1000,int(settings.get("logo_y",20)))
-                    settings["logo_size"]=st.slider("Logo width (% of original image)",5,100,int(settings.get("logo_size",20)))
-                    settings["logo_opacity"]=st.slider("Logo opacity",0.1,1.0,float(settings.get("logo_opacity",1.0)))
-                    st.caption("Logo → Logo Adjust")
-                data["settings"]=settings
-                save_project(selected,row["title"],row["status"],data)
-                if st.button("Save editor settings"):
-                    data["settings"]=settings; save_project(selected,row["title"],row["status"],data); st.success("Settings saved")
-                st.markdown("#### Edited preview")
-                if st.button("▶ Generate preview (first 8 seconds)"):
-                    voice_asset=Path(assets["voice"]) if assets.get("voice") else None
-                    if not voice_asset or not voice_asset.exists():
-                        st.warning("Preview အတွက် Voice Studio မှာ narration generate/upload လုပ်ပါ။")
-                    else:
-                        try:
-                            preview_path=root/"preview.mp4"
-                            subtitle_asset=Path(assets["srt"]) if assets.get("srt") and Path(assets["srt"]).exists() else None
-                            with st.spinner("Preview render လုပ်နေသည်…"):
-                                render_video(video,voice_asset,preview_path,subtitle_asset,settings,preview=True)
-                            data["assets"]["preview"]=str(preview_path)
-                            data["settings"]=settings
-                            save_project(selected,row["title"],row["status"],data)
-                            st.video(preview_path.read_bytes())
-                        except Exception as e:
-                            st.error("Preview render failed: "+str(e))
-                if assets.get("preview") and Path(assets["preview"]).exists():
-                    st.caption("Last generated preview. Generate again after changing settings.")
-                    st.video(Path(assets["preview"]).read_bytes())
-                if st.button("DONE — CONFIRM EDITS",type="primary"):
-                    data["settings"]=settings; data["confirmed_settings"]=json.loads(json.dumps(settings))
-                    save_project(selected,row["title"],"confirmed",data); st.success("Edit settings confirmed. Reopen or change settings and confirm again to update.")
-                st.markdown("#### Render final MP4")
-                st.caption("Use a short test video first. Final render begins only after confirmation.")
-                if st.button("🎞️ RENDER FINAL MP4",type="primary"):
-                    if "confirmed_settings" not in data: st.error("အရင် DONE — CONFIRM EDITS ကိုနှိပ်ပါ။")
-                    elif not video or not video.exists(): st.error("Original video file မတွေ့ပါ။")
-                    elif not assets.get("voice") or not Path(assets["voice"]).exists(): st.error("Voice Studio မှာ narration generate/upload လုပ်ပါ။")
-                    else:
-                        try:
-                            sp=Path(assets["srt"]) if assets.get("srt") and Path(assets["srt"]).exists() else None
-                            out=root/"final.mp4"
-                            with st.spinner("FFmpeg rendering…"):
-                                render_video(video,Path(assets["voice"]),out,sp,data["confirmed_settings"])
-                            assets["final"]=str(out); data["assets"]=assets
-                            save_project(selected,row["title"],"completed",data)
-                            st.success("Final MP4 rendered and validated")
-                            st.video(out.read_bytes()); put_download("Download final MP4",out,out.name,"video/mp4")
-                        except Exception as e:
-                            save_project(selected,row["title"],"failed",data,str(e)); st.error("Render failed: "+str(e))
+@app.post("/project/<pid>/script")
+def save_script(pid):
+    try:
+        row,data,assets,root=project_assets(pid)
+        script=(request.form.get("script") or "").strip()
+        if not script: raise ValueError("Recap script အလွတ်မဖြစ်ရပါ။")
+        path=Path(assets.get("recap",str(root/"burmese_recap.txt")))
+        path.write_text(script,encoding="utf-8")
+        srt=root/"burmese_recap.srt"; srt.write_text(make_srt(script,float(data.get("meta",{}).get("duration",180))),encoding="utf-8")
+        assets.update({"recap":str(path),"srt":str(srt)}); data["assets"]=assets
+        save_project(pid,row["title"],"draft",data)
+        return redirect(url_for("project_view",pid=pid,msg="Script saved and SRT regenerated."))
+    except Exception as exc:
+        return page('<section class="panel"><p>{{ error }}</p><a href="/">Home</a></section>',error=str(exc)),400
+
+@app.post("/project/<pid>/voice")
+def project_voice(pid):
+    try:
+        row,data,assets,root=project_assets(pid)
+        recap_path=Path(assets.get("recap",""))
+        if not recap_path.is_file(): raise ValueError("Recap script မတွေ့ပါ။")
+        voice=request.form.get("voice","my-MM-NilarNeural")
+        if voice not in ("my-MM-NilarNeural","my-MM-ThihaNeural"): raise ValueError("Voice option မမှန်ပါ။")
+        speed=max(-30,min(30,int(request.form.get("speed",0))))
+        out=root/"narration.mp3"; create_voice(recap_path.read_text(encoding="utf-8"),out,voice,speed)
+        assets["voice"]=str(out); data["assets"]=assets; data["voice_provider"]="edge-tts "+voice
+        save_project(pid,row["title"],"draft",data)
+        return redirect(url_for("project_view",pid=pid,msg="Narration generated."))
+    except Exception as exc:
+        return page('<section class="panel"><p>{{ error }}</p><a href="/">Home</a></section>',error="Voice generation failed: "+str(exc)),400
+
+@app.post("/project/<pid>/render")
+def project_render(pid):
+    try:
+        row,data,assets,root=project_assets(pid)
+        video=Path(data.get("video",""))
+        voice=Path(assets.get("voice",""))
+        if not video.is_file(): raise ValueError("Source video မတွေ့ပါ။")
+        if not voice.is_file(): raise ValueError("အရင် narration generate လုပ်ပါ။")
+        subtitle=Path(assets["srt"]) if assets.get("srt") and Path(assets["srt"]).is_file() else None
+        settings=data.setdefault("settings",{})
+        settings["audio_mode"]=request.form.get("audio_mode","Narration only")
+        if settings["audio_mode"] not in ("Narration only","Mix narration + original","Original audio only"):
+            settings["audio_mode"]="Narration only"
+        settings["subtitles_enabled"]="subtitles_enabled" in request.form
+        settings["subtitle_size"]=max(12,min(48,int(request.form.get("subtitle_size",22))))
+        out=root/"final.mp4"
+        render_video(video,voice,out,subtitle,settings)
+        assets["final"]=str(out); data["assets"]=assets
+        save_project(pid,row["title"],"completed",data)
+        return redirect(url_for("project_view",pid=pid,msg="Final MP4 rendered successfully."))
+    except Exception as exc:
+        try: save_project(pid,row["title"],"failed",data,str(exc)[:1000])
+        except Exception: pass
+        return page('<section class="panel"><h2>Render failed</h2><p>{{ error }}</p><a href="/project/{{ pid }}">Back to project</a></section>',error=str(exc)[:1000],pid=pid),500
+
+@app.get("/download/<pid>/<asset>")
+def download(pid,asset):
+    allowed={"video":"video","transcript":"transcript","recap":"recap","srt":"srt","voice":"voice","final":"final"}
+    if asset not in allowed: return page('<section class="panel">Unknown download <a href="/">Home</a></section>'),404
+    try:
+        row,data,assets,root=project_assets(pid)
+        path=Path(data.get("video","")) if asset=="video" else Path(assets.get(allowed[asset],""))
+        if not path.is_file() or not path.resolve().is_relative_to(root.resolve()):
+            raise LookupError("ဖိုင်မတွေ့ပါ။")
+        mime={"video":"video/mp4","transcript":"text/plain","recap":"text/plain","srt":"application/x-subrip","voice":"audio/mpeg","final":"video/mp4"}[asset]
+        return send_file(path,as_attachment=asset not in ("voice",),download_name=path.name,mimetype=mime)
+    except (ValueError,LookupError) as exc:
+        return page('<section class="panel"><p>{{ error }}</p><a href="/">Home</a></section>',error=str(exc)),404
+
+@app.errorhandler(413)
+def too_large(_):
+    return page('<section class="panel"><h2>File too large</h2><p>Video size limit is 200 MB.</p><a href="/">Go back</a></section>'),413
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0",port=int(os.getenv("PORT","10000")))
