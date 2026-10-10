@@ -14,7 +14,6 @@ from datetime import datetime
 import requests
 import os
 from flask import Flask, request, redirect, url_for, render_template_string, send_file
-from cryptography.fernet import Fernet, InvalidToken
 
 APP_NAME = "ONE CLICK — ONE MOVIE RECAP"
 BASE = Path(os.getenv("APP_DATA_DIR", "data")).resolve()
