@@ -1,9 +1,0 @@
-.env
-.streamlit/secrets.toml
-__pycache__/
-*.py[cod]
-.venv/
-app_data/
-*.mp4
-*.mp3
-*.wav
