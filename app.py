@@ -7,8 +7,12 @@ import time
 import shutil
 import sqlite3
 import subprocess
+import socket
+import ipaddress
+from urllib.parse import urlsplit, urljoin
 from pathlib import Path
 from datetime import datetime
+import requests
 import streamlit as st
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -118,6 +122,99 @@ def run_cmd(args, timeout=3600):
 
 def ffmpeg_ok():
     return shutil.which("ffmpeg") and shutil.which("ffprobe")
+
+MAX_REMOTE_VIDEO_BYTES = 200 * 1024 * 1024
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
+VIDEO_MIME_EXTENSIONS = {
+    "video/mp4": ".mp4",
+    "video/quicktime": ".mov",
+    "video/x-matroska": ".mkv",
+    "video/webm": ".webm",
+    "video/x-msvideo": ".avi",
+    "application/octet-stream": "",
+}
+
+def validate_public_video_url(raw_url):
+    """Allow only public HTTP(S) hosts; reject local/private targets and unusual ports."""
+    parsed = urlsplit((raw_url or "").strip())
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValueError("မှန်ကန်တဲ့ http/https video file URL ထည့်ပါ။")
+    if parsed.username or parsed.password:
+        raise ValueError("URL ထဲမှာ username/password ထည့်ထားတာကို လက်မခံပါ။")
+    try:
+        port = parsed.port
+    except ValueError:
+        raise ValueError("URL port မမှန်ပါ။")
+    if port not in (None, 80, 443):
+        raise ValueError("80 သို့မဟုတ် 443 port ကိုသာ အသုံးပြုနိုင်ပါတယ်။")
+    host = parsed.hostname.rstrip(".").lower()
+    if host in ("localhost",) or host.endswith(".localhost") or host.endswith(".local"):
+        raise ValueError("Local network URL ကို လက်မခံပါ။")
+    try:
+        addresses = {ipaddress.ip_address(item[4][0]) for item in socket.getaddrinfo(host, port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM)}
+    except (OSError, ValueError):
+        raise ValueError("URL domain ကို မရှာတွေ့ပါ။")
+    if not addresses or any(not address.is_global for address in addresses):
+        raise ValueError("Public internet ပေါ်က URL ကိုသာ အသုံးပြုနိုင်ပါတယ်။")
+    return parsed.geturl()
+
+def download_direct_video(raw_url, target_dir):
+    """Download a direct video-file URL only (not streaming pages), capped at 200 MB."""
+    current_url = validate_public_video_url(raw_url)
+    response = None
+    for _ in range(6):
+        response = requests.get(current_url, stream=True, timeout=(10, 45), allow_redirects=False,
+                                headers={"User-Agent": "NoPainNoGainRecap/1.0"})
+        if response.status_code in (301, 302, 303, 307, 308):
+            location = response.headers.get("Location")
+            response.close()
+            if not location:
+                raise ValueError("Video URL redirect မမှန်ပါ။")
+            current_url = validate_public_video_url(urljoin(current_url, location))
+            continue
+        if response.status_code != 200:
+            status_code = response.status_code
+            response.close()
+            raise ValueError(f"Video URL က HTTP {status_code} ပြန်ပေးပါတယ်။")
+        break
+    else:
+        raise ValueError("Video URL redirect အဆင့်များလွန်းပါတယ်။")
+
+    try:
+        content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+        if content_type and not (content_type.startswith("video/") or content_type == "application/octet-stream"):
+            raise ValueError("ဒီ URL က တိုက်ရိုက် video file မဟုတ်ပါ။ MP4/MOV/MKV/WEBM file link ကို ထည့်ပါ။")
+        length = response.headers.get("Content-Length")
+        if length and int(length) > MAX_REMOTE_VIDEO_BYTES:
+            raise ValueError("Video ဖိုင်က 200 MB ထက်ကြီးနေပါတယ်။ Short clip သို့မဟုတ် သေးတဲ့ဖိုင်ကို သုံးပါ။")
+        path_ext = Path(urlsplit(current_url).path).suffix.lower()
+        mime_ext = VIDEO_MIME_EXTENSIONS.get(content_type, "")
+        extension = path_ext if path_ext in VIDEO_EXTENSIONS else mime_ext
+        if extension not in VIDEO_EXTENSIONS:
+            raise ValueError("Video ဖိုင်အမျိုးအစား မသိနိုင်ပါ။ URL က .mp4/.mov/.mkv/.webm/.avi/.m4v တစ်ခုဖြစ်ရပါမယ်။")
+        target_dir = Path(target_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        destination = target_dir / ("movie" + extension)
+        total = 0
+        with destination.open("wb") as output:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > MAX_REMOTE_VIDEO_BYTES:
+                    raise ValueError("Video ဖိုင်က 200 MB ထက်ကြီးနေပါတယ်။ Short clip သို့မဟုတ် သေးတဲ့ဖိုင်ကို သုံးပါ။")
+                output.write(chunk)
+        if total == 0:
+            raise ValueError("Video ဖိုင်ဗလာဖြစ်နေပါတယ်။")
+        return destination, "URL video" + extension
+    except Exception:
+        try:
+            (Path(target_dir) / ("movie" + (extension if "extension" in locals() else ".mp4"))).unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise
+    finally:
+        response.close()
 
 def probe_video(path):
     raw=run_cmd(["ffprobe","-v","error","-show_streams","-show_format","-of","json",str(path)],timeout=90)
@@ -398,25 +495,42 @@ if page=="Dashboard":
 
 elif page=="Create Recap":
     st.markdown("### Create a new movie recap")
-    uploaded=st.file_uploader("Upload movie / video",type=["mp4","mov","mkv","webm","avi","m4v"],key="movie_upload")
+    source_mode=st.radio("Video source",["Upload movie file","Direct video URL"],horizontal=True,key="video_source_mode")
+    uploaded=None
+    movie_url=""
+    if source_mode=="Upload movie file":
+        uploaded=st.file_uploader("Upload movie / video",type=["mp4","mov","mkv","webm","avi","m4v"],key="movie_upload")
+    else:
+        movie_url=st.text_input("Direct downloadable video URL",placeholder="https://example.com/video.mp4",key="movie_url_input")
+        st.caption("Direct MP4/MOV/MKV/WEBM/AVI/M4V ဖိုင် link ကိုသာ လက်ခံပါတယ်။ YouTube/Netflix/streaming page link မဟုတ်ပါ။ ကိုယ်ပိုင် သို့မဟုတ် အသုံးပြုခွင့်ရှိတဲ့ video ကိုသာ သုံးပါ။ URL download limit 200 MB ဖြစ်ပါတယ်။")
     style=st.select_slider("Recap length",options=["တို","အလယ်အလတ်","ရှည်"],value="အလယ်အလတ်")
     groq_model=st.selectbox("Whisper model",["whisper-large-v3-turbo","whisper-large-v3"])
     model=st.text_input("Gemini model (auto-detect if unavailable)",value=st.session_state.api_gemini_model)
-    st.caption("Keys ကို Settings မှာထည့်ပါ။ Video processing က server CPU/RAM/disk လိုအပ်ပါတယ်။")
+    st.caption("Keys ကို Settings မှာထည့်ပါ။ Video processing က server CPU/RAM/disk လိုအပ်ပါတယ်။ Free hosting မှာ short clip နဲ့ စမ်းပါ။")
     if uploaded:
         st.video(uploaded)
         st.write(f"File: {uploaded.name} · {uploaded.size/1024/1024:.1f} MB")
-    if st.button("🚀 ONE CLICK RECAP",type="primary",use_container_width=True,disabled=not bool(uploaded)):
+    can_process=bool(uploaded) or (source_mode=="Direct video URL" and bool(movie_url.strip()))
+    if st.button("🚀 ONE CLICK RECAP",type="primary",use_container_width=True,disabled=not can_process):
         if not st.session_state.api_groq or not st.session_state.api_gemini:
             st.error("Settings မှာ Groq နဲ့ Gemini API Key ထည့်ပါ။")
         elif not ffmpeg_ok():
             st.error("FFmpeg/FFprobe မတွေ့ပါ။ Deployment မှာ FFmpeg install လုပ်ထားရပါမယ်။")
         else:
             pid=uuid.uuid4().hex[:12]; root=project_dir(pid)
-            original=root/("movie"+Path(uploaded.name).suffix.lower())
-            original.write_bytes(uploaded.getvalue())
+            try:
+                if source_mode=="Direct video URL":
+                    with st.spinner("Video URL ကို လုံခြုံရေးစစ်ပြီး download လုပ်နေပါတယ်…"):
+                        original,movie_name=download_direct_video(movie_url,root)
+                else:
+                    movie_name=uploaded.name
+                    original=root/("movie"+Path(uploaded.name).suffix.lower())
+                    original.write_bytes(uploaded.getvalue())
+            except Exception as e:
+                st.error("Video download/upload မအောင်မြင်ပါ: "+str(e))
+                st.stop()
             data={"video":str(original),"assets":{},"settings":{"subtitles_enabled":True,"text_enabled":False,"blur_enabled":False,"logo_enabled":False},"style":style}
-            save_project(pid,uploaded.name,"processing",data)
+            save_project(pid,movie_name,"processing",data)
             st.session_state.active_project=pid
             try:
                 with st.status("Processing movie…",expanded=True) as status:
@@ -448,7 +562,7 @@ elif page=="Create Recap":
                     except Exception as tts_error:
                         data["tts_error"]=str(tts_error)[:500]
                     data["status"]="draft"
-                    save_project(pid,uploaded.name,"draft",data)
+                    save_project(pid,movie_name,"draft",data)
                     status.update(label="Recap assets prepared",state="complete")
                 st.success("Transcript, Burmese recap နဲ့ SRT draft ရပါပြီ။")
                 if data.get("assets",{}).get("voice"):
@@ -458,7 +572,7 @@ elif page=="Create Recap":
                     if data.get("tts_error"): st.caption(data["tts_error"])
                 st.rerun()
             except Exception as e:
-                save_project(pid,uploaded.name,"failed",data,str(e))
+                save_project(pid,movie_name,"failed",data,str(e))
                 st.error("Processing failed: "+str(e))
 
 elif page=="Settings":
