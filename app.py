@@ -259,7 +259,11 @@ def render_video(video,voice,output,subtitle=None,settings=None):
     if has_logo:
         x=max(0,int(settings.get("logo_x",20))); y=max(0,int(settings.get("logo_y",20)))
         out=f"[v{label_index}]"
-        graph.append(f"{current}[2:v]overlay={x}:{y}:format=auto{out}")
+        size=max(5,min(100,int(settings.get("logo_size",20))))
+        opacity=max(0.1,min(1.0,float(settings.get("logo_opacity",1.0))))
+        logo_label=f"[logo{label_index}]"
+        graph.append(f"[2:v]scale=iw*{size/100:.3f}:-1,format=rgba,colorchannelmixer=aa={opacity:.2f}{logo_label}")
+        graph.append(f"{current}{logo_label}overlay={x}:{y}:format=auto{out}")
         current=out
     if graph:
         cmd += ["-filter_complex",";".join(graph),"-map",current,"-map","1:a:0"]
@@ -514,7 +518,11 @@ elif page in ("Subtitle Studio","Voice Studio","Video Editor","Export History"):
                     logo=st.file_uploader("Upload transparent PNG logo",type=["png"],key="logo_"+selected)
                     if logo:
                         lp=root/"logo.png"; lp.write_bytes(logo.getvalue()); settings["logo_path"]=str(lp)
-                    st.caption("Logo → Logo Adjust · logo overlay render is experimental in this version")
+                    settings["logo_x"]=st.slider("Logo X",0,1000,int(settings.get("logo_x",20)))
+                    settings["logo_y"]=st.slider("Logo Y",0,1000,int(settings.get("logo_y",20)))
+                    settings["logo_size"]=st.slider("Logo width (% of original image)",5,100,int(settings.get("logo_size",20)))
+                    settings["logo_opacity"]=st.slider("Logo opacity",0.1,1.0,float(settings.get("logo_opacity",1.0)))
+                    st.caption("Logo → Logo Adjust")
                 if st.button("Save editor settings"):
                     data["settings"]=settings; save_project(selected,row["title"],row["status"],data); st.success("Settings saved")
                 if st.button("DONE — CONFIRM EDITS",type="primary"):
