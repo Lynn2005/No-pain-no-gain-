@@ -564,6 +564,8 @@ elif page in ("Subtitle Studio","Voice Studio","Video Editor","Export History"):
                     settings["logo_size"]=st.slider("Logo width (% of original image)",5,100,int(settings.get("logo_size",20)))
                     settings["logo_opacity"]=st.slider("Logo opacity",0.1,1.0,float(settings.get("logo_opacity",1.0)))
                     st.caption("Logo → Logo Adjust")
+                data["settings"]=settings
+                save_project(selected,row["title"],row["status"],data)
                 if st.button("Save editor settings"):
                     data["settings"]=settings; save_project(selected,row["title"],row["status"],data); st.success("Settings saved")
                 st.markdown("#### Edited preview")
