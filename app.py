@@ -209,12 +209,12 @@ def generate_recap(transcript,api_key,requested_model,style,groq_api_key=None):
     chunks=[transcript[i:i+18000] for i in range(0,len(transcript),18000)]
     def make_chunk_prompt(idx,chunk):
         return ("You are a careful movie-recap writer. Extract chronological plot facts, characters, motivations, key reveals, climax and ending. "
-                "Do not invent facts. Return concise notes in Burmese. This is chunk "+str(idx)+" of "+str(len(chunks))+".\\n\\n"+chunk)
+                "Do not invent facts. Return concise notes in Burmese. This is chunk "+str(idx)+" of "+str(len(chunks))+".\n\n"+chunk)
     def make_final_prompt(notes):
         return ("အောက်ပါ plot notes ကို အခြေခံ၍ မြန်မာဘာသာဖြင့် သဘာဝကျပြီး နားထောင်ကောင်းသော movie recap narration ရေးပါ။ "
                 "အစ၊ အလယ်၊ အထွတ်အထိပ်၊ အဆုံးကို အစဉ်လိုက်ထိန်းပါ။ မူရင်းတွင်မရှိသောအဖြစ်အပျက် မတီထွင်ပါနှင့်။ "
-                "ထပ်နေသောအကြောင်းအရာဖယ်ပါ။ "+length_instruction+" ဖြစ်ရမည်။ ခေါင်းစဉ်/မှတ်ချက်မထည့်ဘဲ ဖတ်ပြမည့်စာသားသာ ပြန်ပါ。\\n\\n".replace("。","。")+
-                "\\n\\n".join(notes)[:70000])
+                "ထပ်နေသောအကြောင်းအရာဖယ်ပါ။ "+length_instruction+" ဖြစ်ရမည်။ ခေါင်းစဉ်/မှတ်ချက်မထည့်ဘဲ ဖတ်ပြမည့်စာသားသာ ပြန်ပါ。\n\n".replace("。","。")+
+                "\n\n".join(notes)[:70000])
     gemini_error=None
     try:
         models,client=gemini_models(api_key)
