@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: no-pain-no-gain
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /_stcore/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: APP_DATA_DIR
+        value: /var/data
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.8-flash
+    disk:
+      name: recap-data
+      mountPath: /var/data
+      sizeGB: 1
