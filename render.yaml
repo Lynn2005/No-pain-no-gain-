@@ -16,6 +16,8 @@ services:
         sync: false
       - key: GEMINI_MODEL
         value: gemini-3.8-flash
+      - key: APP_ENCRYPTION_KEY
+        sync: false
     disk:
       name: recap-data
       mountPath: /var/data
