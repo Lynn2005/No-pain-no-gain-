@@ -265,6 +265,7 @@ def render_video(video,voice,output,subtitle=None,settings=None):
         graph.append(f"[2:v]scale=iw*{size/100:.3f}:-1,format=rgba,colorchannelmixer=aa={opacity:.2f}{logo_label}")
         graph.append(f"{current}{logo_label}overlay={x}:{y}:format=auto{out}")
         current=out
+    video_graph_present=bool(graph)
     audio_mode=settings.get("audio_mode","Narration only")
     if audio_mode=="Mix narration + original" and meta.get("has_audio"):
         graph.append("[0:a:0]volume=0.25[orig];[1:a:0]volume=1.0[narr];[orig][narr]amix=inputs=2:duration=shortest:dropout_transition=2[aout]")
@@ -274,7 +275,7 @@ def render_video(video,voice,output,subtitle=None,settings=None):
     else:
         audio_map="1:a:0"
     if graph:
-        cmd += ["-filter_complex",";".join(graph),"-map",current,"-map",audio_map]
+        cmd += ["-filter_complex",";".join(graph),"-map",current if video_graph_present else "0:v:0","-map",audio_map]
     else:
         cmd += ["-map","0:v:0","-map",audio_map]
     cmd += ["-c:v","libx264","-preset","veryfast","-crf",str(settings.get("crf",23)),
